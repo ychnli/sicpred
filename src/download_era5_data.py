@@ -44,6 +44,48 @@ months = ['01', '02', '03',
         '07', '08', '09',
         '10', '11', '12']
 
+variables_dict = {
+    '10m_u_component_of_wind': {
+        'plevel': None,
+        'short_name': 'u10'
+    }, 
+    '10m_v_component_of_wind': {
+        'plevel': None,
+        'short_name': 'v10'
+    }, 
+    '2m_temperature': {
+        'plevel': None,
+        'short_name': 't2m'
+    }, 
+    'mean_sea_level_pressure': {
+        'plevel': None,
+        'short_name': 'msl'
+    }, 
+    'sea_surface_temperature': {
+        'plevel': None,
+        'short_name': 'sst'
+    }, 
+    'surface_net_solar_radiation': {
+        'plevel': None,
+        'short_name': 'ssr'
+    }, 
+    'surface_net_thermal_radiation': {
+        'plevel': None,
+        'short_name': 'str'
+    }, 
+    'sea_ice_cover': {
+        'plevel': None
+    }, 
+    'land_sea_mask': {
+        'plevel': None
+    }, 
+    'geopotential': {
+        'plevel': '500'
+    }
+}
+
+#######################################################################
+
 def download_era5_variable(var_name, save_path, plevel=None, overwrite=False):
     if os.path.exists(save_path):
         if overwrite: 
@@ -73,5 +115,10 @@ def download_era5_variable(var_name, save_path, plevel=None, overwrite=False):
 
 cds_client = cdsapi.Client()
 
-save_path = os.path.join(save_directory, f'{variable}.nc')
-download_era5_variable(variable, save_path)
+plevel = variables_dict[variable]["plevel"]
+if plevel is not None:
+    save_path = os.path.join(save_directory, f'{variable}_{plevel}hPa.nc')
+else: 
+    save_path = os.path.join(save_directory, f'{variable}.nc')
+
+download_era5_variable(variable, save_path, plevel=variables_dict[variable]["plevel"])

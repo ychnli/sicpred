@@ -6,3 +6,5 @@ python3 regrid_era5_data.py --var mean_sea_level_pressure
 python3 regrid_era5_data.py --var sea_surface_temperature
 python3 regrid_era5_data.py --var surface_net_solar_radiation
 python3 regrid_era5_data.py --var surface_net_thermal_radiation
+python3 regrid_era5_data.py --var sea_ice_cover
+python3 regrid_era5_data.py --var geopotential
