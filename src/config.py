@@ -1,7 +1,7 @@
 import os
 import xarray as xr
 
-DATA_DIRECTORY = '/scratch/groups/earlew/yuchen/'
+DATA_DIRECTORY = '/oak/stanford/groups/earlew/yuchen/'
 
 SPS_GRID = xr.open_dataset(os.path.join(DATA_DIRECTORY, 'NSIDC/sps_grid.nc'))
 

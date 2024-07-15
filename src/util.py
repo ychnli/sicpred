@@ -1,5 +1,6 @@
 import xarray as xr
 import numpy as np
+import pandas as pd
 import config
 import os
 
@@ -24,19 +25,19 @@ def normalize_data():
     """
     return None
 
-def concatenate_nsidc(working_path=None):
+def concatenate_nsidc(working_path=None, overwrite=False):
     """ 
     Merge the NSIDC data into one netCDF file called seaice_conc_monthly_all 
     """
-
+    print("1) Merge monthly NSIDC files")
     if working_path == None:
-        working_path = f'{config.DATA_DIRECTORY}/NSIDC'
+        working_path = os.path.join(config.DATA_DIRECTORY, 'NSIDC')
 
     if not os.path.exists(working_path):
         raise FileNotFoundError(f"{working_path} does not exist. make sure the NSIDC data is in its own directory")
     
     save_path = f'{working_path}/seaice_conc_monthly_all.nc'
-    if os.path.exists(save_path):
+    if os.path.exists(save_path) and not overwrite:
         print(f"Already found file {save_path}. Skipping...")
         return
 
@@ -51,11 +52,88 @@ def concatenate_nsidc(working_path=None):
     sorted_files = sh_files + icdr_files
     sorted_files = [os.path.join(working_path, f) for f in sorted_files]
 
+    print("Concatenating files...")
     ds_concat = xr.open_mfdataset(sorted_files, combine="nested", concat_dim='tdim')
-    ds_concat.rename({'cdr_seaice_conc_monthly': 'siconc'})
-    print('Concatenating files...', end=' ')
+    ds_concat = ds_concat.rename({'cdr_seaice_conc_monthly': 'siconc'})
+    ds_concat.load()
+
+    # Add time coordinate 
+    print("Adding time index and renaming time coordinate...")
+    ds_concat = ds_concat.swap_dims({'tdim': 'time'})
+    ds_concat["time"] = pd.to_datetime(ds_concat["time"].values)
+
+    print('Saving...', end=' ')
     ds_concat.to_netcdf(save_path)
     print('done!')
+
+
+
+def linear_regress_array(x_arr, y_arr, axis=0, mask=None):
+    """
+    Fit the linear model y = Ax + b using least squares. Works element-wise along axis.
+
+    Params:
+        x_arr:  either an array of same shape as y_arr or a 1-dimensional array with
+                the same size as y_arr along the specified axis
+        y_arr:  ndarray of arbitrary size 
+        axis:   axis along which to fit the linear model. By default, set to 0 (time axis)
+        mask:   mask of same shape as y_arr (excluding the regression axis) specifying 
+                which points to compute the regression and which ones to skip 
+    """
+    num_dimensions = y_arr.ndim
+    
+    if axis >= num_dimensions or axis < 0:
+        raise ValueError(f"Axis {axis} is out of bounds for array of dimension {num_dimensions}")
+    
+    if x_arr.ndim == 1:
+        if len(x_arr) != y_arr.shape[axis]:
+            raise ValueError(f"Length of x_arr must match the size of y_arr along axis {axis}")
+        
+    # Get the shape of the input array and modify it for the output array
+    original_shape = list(y_arr.shape)
+    modified_shape = original_shape.copy()
+    modified_shape[axis] = 2
+    result_array = np.empty(modified_shape)
+    
+    # Iterate over all slices along the specified axis and perform linear regression
+    start_time = time()
+    it = np.nditer(np.zeros(original_shape), flags=['multi_index'])
+    while not it.finished:
+        idx = it.multi_index
+
+        y_slice_index = list(idx)
+        y_slice_index[axis] = slice(None)
+
+        if mask is None:
+            mask_slice = True
+        else: 
+            mask_index = idx[:axis] + idx[axis+1:]
+            mask_slice = mask[mask_index]
+        
+        if np.any(mask_slice):
+            # Select the current slices of x_arr and y_arr
+            if x_arr.ndim == 1:
+                x_slice = x_arr
+            else:
+                x_slice = x_arr[tuple(y_slice_index)]
+            
+            y_slice = y_arr[tuple(y_slice_index)]
+            A = np.vstack([x_slice, np.ones_like(x_slice)]).T
+            slope, intercept = np.linalg.lstsq(A, y_slice, rcond=None)[0]
+        else:
+            slope, intercept = 0.0, 0.0
+        
+        # Store the results in the result_array
+        result_array[tuple(y_slice_index)] = [slope, intercept]
+        
+        it.iternext()
+
+    end_time = time()
+    elapsed_time = end_time - start_time
+    print(f"Elapsed time: {elapsed_time:.4f} seconds")
+
+    return result_array
+
 
 ##########################################################################################
 # Sea ice diagnostics 
