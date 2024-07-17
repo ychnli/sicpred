@@ -1,6 +1,7 @@
 import xarray as xr
 import numpy as np
 import pandas as pd
+from time import time
 import config
 import os
 
@@ -19,11 +20,87 @@ def prep_prediction_samples():
 
     return input, output 
 
-def normalize_data():
+
+
+def normalize_data(overwrite=False, verbose=1):
     """ 
-    Normalize and save variables  
+    Normalize inputs and save. 
     """
-    return None
+
+    vars_to_normalize = config.era5_variables_dict.keys()
+    save_dir = os.path.join(config.DATA_DIRECTORY, "sicpred/normalized_inputs")
+
+    for var_name in vars_to_normalize:
+        if os.path.exists(os.path.join(save_dir, f"{var_name}_norm.nc")):
+            if verbose == 1: print(f"Already found normalized file for {var_name}. Skipping...")
+            continue
+
+        print(f"Normalizing {var_name}...")
+        if var_name == "siconc":
+            ds = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc")
+            da = ds[var_name].sel(time=config.TRAIN_MONTHS)
+
+        elif var_name == "geopotential":
+            ds = xr.open_dataset(f"{config.DATA_DIRECTORY}/ERA5/{var_name}_500hPa_SPS.nc")
+            da = ds[config.era5_variables_dict[var_name]["short_name"]].sel(time=config.TRAIN_MONTHS)
+
+        else:
+            if not os.path.exists(f"{config.DATA_DIRECTORY}/ERA5/{var_name}_SPS.nc"):
+                raise FileNotFoundError(f"{config.DATA_DIRECTORY}/ERA5/{var_name}_SPS.nc does not exist!")
+
+            ds = xr.open_dataset(f"{config.DATA_DIRECTORY}/ERA5/{var_name}_SPS.nc")
+            da = ds[config.era5_variables_dict[var_name]["short_name"]].sel(time=config.TRAIN_MONTHS)
+
+        print("Calculating means and stdev...", end="")
+        monthly_means = da.groupby("time.month").mean("time")
+        monthly_stdevs = da.groupby("time.month").std("time")
+        print("done!")
+        
+        months = da['time'].dt.month
+        normalized_da = xr.apply_ufunc(
+            lambda x, m, s: (x - m) / s,
+            da,
+            monthly_means.sel(month=months),
+            monthly_stdevs.sel(month=months),
+            output_dtypes=[da.dtype]
+        )
+
+        # Make a new folder to save the normalized variables 
+        os.makedirs(save_dir, exist_ok=True)
+        print("Saving...", end="")
+        normalized_da.to_netcdf(os.path.join(save_dir, f"{var_name}_norm.nc"))
+        print("done!")
+
+
+
+def remove_expver_from_era5(verbose=1):
+    for var_name in config.era5_variables_dict.keys():
+        if var_name == "geopotential":
+            file_path = os.path.join(config.DATA_DIRECTORY, "ERA5/geopotential_500hPa_SPS.nc")
+            ds = xr.open_dataset(file_path)
+        else:
+            file_path = os.path.join(config.DATA_DIRECTORY, f"ERA5/{var_name}_SPS.nc")
+            ds = xr.open_dataset(file_path)
+        
+        if "expver" not in ds.dims:
+            if verbose == 1:
+                continue
+            elif verbose > 1: 
+                print(f"expver not found in {variable}. Skipping... ")
+                continue
+            else: continue 
+
+        print(f"Removing expver dimension from {var_name}...", end=" ")
+        combined_ds = ds.sel(expver=1).combine_first(ds.sel(expver=5))
+
+        temp_file_path = file_path + '.tmp'
+        combined_ds.to_netcdf(temp_file_path)
+        combined_ds.close()
+        os.replace(temp_file_path, file_path)
+
+        print("done!")
+        
+
 
 def concatenate_nsidc(working_path=None, overwrite=False):
     """ 
