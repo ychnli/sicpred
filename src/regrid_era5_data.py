@@ -5,6 +5,7 @@ Regrids variables to the NSIDC SPS (South Polar Stereographic) grid.
 import xarray as xr
 import xesmf as xe 
 import config 
+import util
 import argparse
 import os
 
@@ -16,6 +17,8 @@ args = parser.parse_args()
 variable = args.var
 
 """
+Regrid using bilinear interpolation to the grid specified by the output grid
+
 Params:
     var_name (str) name of variable 
     data_path (str) path where the variable 
@@ -62,7 +65,11 @@ def regrid_var(var_name, output_grid=config.SPS_GRID, grid_name='SPS', overwrite
     ds_regridded = regridder(ds_to_regrid)
     print(f'Finished regridding {var_name}! saving...', end='')
     
-    ds_regridded.to_netcdf(save_path)
+    if os.path.exists(save_path): 
+        util.overwrite_nc_file(ds_regridded, save_path)
+    else: 
+        ds_regridded.to_netcdf(save_path)
+
     print('Done!')
 
-regrid_var(variable, overwrite=False)
+regrid_var(variable, overwrite=True)

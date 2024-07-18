@@ -27,17 +27,13 @@ def linear_trend(target_month, save_path, linear_years="all", verbose=1):
 
     # First check if it exists or not
     if os.path.exists(save_name):
-        print(f"Found pre-existing file with path {save_name}. Skipping...")
+        if verbose >= 1: print(f"Found pre-existing file with path {save_name}. Skipping...")
         return 
 
     INITIAL_YEAR = pd.to_datetime('1978-11')
 
-    print(f"Computing linear trend forecast for {target_month} using {linear_years} years")
+    if verbose >= 1: print(f"Computing linear trend forecast for {target_month} using {linear_years} years")
     nsidc_sic = xr.open_dataset(f'{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc')
-
-    # For some reason, there are two months containing missing data (all the sea ice extent is NaN)
-    # For now, just remove those times from consideration 
-    nsidc_sic = nsidc_sic.sel(time=nsidc_sic.time[np.isnan(nsidc_sic.siconc).sum(dim=('x', 'y')) == 0])
 
     # Select subset of dataset of only the target month 
     subset_target_months = nsidc_sic.siconc.sel(time=nsidc_sic.time.dt.month == target_month.month)

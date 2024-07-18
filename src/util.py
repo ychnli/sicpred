@@ -6,7 +6,7 @@ import config
 import os
 
 ##########################################################################################
-# Data preprocessing stuff 
+# Data preprocessing 
 ##########################################################################################
 
 def prep_prediction_samples(): 
@@ -22,20 +22,41 @@ def prep_prediction_samples():
 
 
 
+def write_nc_file(ds, save_path, overwrite, verbose=1):
+    if type(overwrite) != bool:
+        raise TypeError("overwrite needs to be bool")
+
+    if overwrite:
+        if not os.path.exists(save_path):
+            if verbose == 2: print(f"Nothing to overwrite: {save_path} doesn't exist yet!")
+            return 
+
+        temp_path = save_path + '.tmp'
+        ds.to_netcdf(temp_path)
+        os.replace(temp_path, save_path)
+        if verbose == 2: print(f"Overwrote {save_path}")
+
+    else: 
+        ds.to_netcdf(save_path)
+        if verbose == 2: print(f"Saved to {save_path}")
+
+
 def normalize_data(overwrite=False, verbose=1):
     """ 
     Normalize inputs and save. 
     """
 
-    vars_to_normalize = config.era5_variables_dict.keys()
+    vars_to_normalize = list(config.era5_variables_dict.keys())
+    vars_to_normalize.remove("sea_ice_cover")
+
     save_dir = os.path.join(config.DATA_DIRECTORY, "sicpred/normalized_inputs")
 
     for var_name in vars_to_normalize:
-        if os.path.exists(os.path.join(save_dir, f"{var_name}_norm.nc")):
+        if os.path.exists(os.path.join(save_dir, f"{var_name}_norm.nc")) and not overwrite:
             if verbose == 1: print(f"Already found normalized file for {var_name}. Skipping...")
             continue
 
-        print(f"Normalizing {var_name}...")
+        print(f"Normalizing {var_name}...", end=" ")
         if var_name == "siconc":
             ds = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc")
             da = ds[var_name].sel(time=config.TRAIN_MONTHS)
@@ -51,25 +72,38 @@ def normalize_data(overwrite=False, verbose=1):
             ds = xr.open_dataset(f"{config.DATA_DIRECTORY}/ERA5/{var_name}_SPS.nc")
             da = ds[config.era5_variables_dict[var_name]["short_name"]].sel(time=config.TRAIN_MONTHS)
 
-        print("Calculating means and stdev...", end="")
+        print("calculating means and stdev...", end=" ")
         monthly_means = da.groupby("time.month").mean("time")
         monthly_stdevs = da.groupby("time.month").std("time")
         print("done!")
         
+        def normalize(x, m, s):
+            # Avoid divide by zero by setting normalized value to zero where std deviation is zero
+            with np.errstate(divide='ignore', invalid='ignore'):
+                normalized = (x - m) / s
+                normalized = np.where(s == 0, 0, normalized)  # Set to zero where std dev is zero
+            return normalized
+
         months = da['time'].dt.month
         normalized_da = xr.apply_ufunc(
-            lambda x, m, s: (x - m) / s,
+            normalize,
             da,
             monthly_means.sel(month=months),
             monthly_stdevs.sel(month=months),
             output_dtypes=[da.dtype]
         )
 
+        normalized_ds = normalized_da.to_dataset(name=config.era5_variables_dict[var_name]["short_name"])
+        monthly_means_ds = monthly_means.to_dataset(name=config.era5_variables_dict[var_name]["short_name"])
+        monthly_stdevs_ds = monthly_stdevs.to_dataset(name=config.era5_variables_dict[var_name]["short_name"])
+
         # Make a new folder to save the normalized variables 
         os.makedirs(save_dir, exist_ok=True)
         print("Saving...", end="")
-        normalized_da.to_netcdf(os.path.join(save_dir, f"{var_name}_norm.nc"))
-        print("done!")
+        write_nc_file(monthly_means_ds, os.path.join(save_dir, f"{var_name}_mean.nc"), overwrite)
+        write_nc_file(monthly_stdevs_ds, os.path.join(save_dir, f"{var_name}_stdev.nc"), overwrite)
+        write_nc_file(normalized_ds, os.path.join(save_dir, f"{var_name}_norm.nc"), overwrite)
+        print("done! \n\n")
 
 
 
@@ -92,13 +126,10 @@ def remove_expver_from_era5(verbose=1):
 
         print(f"Removing expver dimension from {var_name}...", end=" ")
         combined_ds = ds.sel(expver=1).combine_first(ds.sel(expver=5))
+        
+        write_nc_file(combined_ds, file_path, overwrite=True)
 
-        temp_file_path = file_path + '.tmp'
-        combined_ds.to_netcdf(temp_file_path)
-        combined_ds.close()
-        os.replace(temp_file_path, file_path)
-
-        print("done!")
+        print("done! \n\n")
         
 
 
@@ -106,21 +137,23 @@ def concatenate_nsidc(working_path=None, overwrite=False):
     """ 
     Merge the NSIDC data into one netCDF file called seaice_conc_monthly_all 
     """
-    print("1) Merge monthly NSIDC files")
+    print("Merging monthly NSIDC files... ", end="")
     if working_path == None:
         working_path = os.path.join(config.DATA_DIRECTORY, 'NSIDC')
 
     if not os.path.exists(working_path):
-        raise FileNotFoundError(f"{working_path} does not exist. make sure the NSIDC data is in its own directory")
+        raise FileNotFoundError(f"{working_path} does not exist. make sure the NSIDC \
+             data is in its own directory")
     
     save_path = f'{working_path}/seaice_conc_monthly_all.nc'
     if os.path.exists(save_path) and not overwrite:
-        print(f"Already found file {save_path}. Skipping...")
+        print(f"Already found file {save_path}. Skipping... \n\n")
         return
 
     all_files = os.listdir(working_path)
 
-    # Files that start with "icdr" correspond to the Near Real Time product, which is updated past the last year
+    # Files that start with "icdr" correspond to the Near Real Time product,
+    # which is updated past the last year
     icdr_files = [f for f in all_files if f.startswith('seaice_conc_monthly_icdr')] 
     icdr_files.sort()
     sh_files = [f for f in all_files if f.startswith('seaice_conc_monthly_sh')]
@@ -140,9 +173,37 @@ def concatenate_nsidc(working_path=None, overwrite=False):
     ds_concat["time"] = pd.to_datetime(ds_concat["time"].values)
 
     print('Saving...', end=' ')
-    ds_concat.to_netcdf(save_path)
-    print('done!')
+    write_nc_file(ds_concat, save_path, overwrite)
+    print('done! \n\n')
 
+
+def remove_missing_data_nsidc(verbose=1):
+    """
+    NSIDC data is missing for 1987 December and 1988 January. Need to remove it so that
+    we don't get NaNs messing up averaging or trend computations 
+    """
+
+    nsidc_sic = xr.open_dataset(f'{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc')
+
+    # The missing data lives as NaN. Check if we need to get rid of it by finding years where
+    # there are NaN values 
+    needs_fixing = len(nsidc_sic.time[np.isnan(nsidc_sic.siconc).sum(dim=('x', 'y')) != 0]) != 0 
+
+    if not needs_fixing:
+        if verbose == 2: print("Didn't find any NaN values in NSIDC dataset. Skipping...")
+        return 
+    
+    if verbose == 1: print("Removing missing ice data in 1987 Dec and 1988 Jan...")
+    nsidc_sic = nsidc_sic.sel(time=nsidc_sic.time[np.isnan(nsidc_sic.siconc).sum(dim=('x', 'y')) == 0])
+
+    temp_path = f'{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc.tmp'
+    nsidc_sic.to_netcdf(temp_path)
+    os.replace(temp_path, f'{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc')
+
+
+##########################################################################################
+# Statistical methods 
+##########################################################################################
 
 
 def linear_regress_array(x_arr, y_arr, axis=0, mask=None):

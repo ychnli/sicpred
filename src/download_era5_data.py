@@ -5,13 +5,14 @@ First, make sure a directory exists where the data is saved. Once you have creat
 the directory, change the path below. 
 """
 
-# Change as needed 
-save_directory = '/scratch/groups/earlew/yuchen/ERA5'
-
 import xarray as xr
 import cdsapi
 import os
 import argparse
+import config
+
+# Change as needed
+save_directory = os.path.join(config.DATA_DIRECTORY, "ERA5")
 
 # Get the variable name to download 
 parser = argparse.ArgumentParser()
