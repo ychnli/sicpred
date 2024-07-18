@@ -25,4 +25,4 @@ months_to_calculate_linear_forecast = pd.date_range(start='1981-01-01', end='202
 util.remove_expver_from_era5()
 
 # normalize variables and save 
-util.normalize_data(overwrite=True)
+util.normalize_train_data(overwrite=True)

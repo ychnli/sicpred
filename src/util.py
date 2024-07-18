@@ -41,14 +41,30 @@ def write_nc_file(ds, save_path, overwrite, verbose=1):
         if verbose == 2: print(f"Saved to {save_path}")
 
 
-def normalize_data(overwrite=False, verbose=1):
+def normalize(x, m, s, var_name=None):
+    # Avoid divide by zero by setting normalized value to zero where std deviation is zero
+    with np.errstate(divide='ignore', invalid='ignore'):
+        normalized = (x - m) / s
+        normalized = np.where(s == 0, 0, normalized)  # Set to zero where std dev is zero
+
+    # For SST below sea ice, the stdev is very low. Normalized values are set to 0 
+    # if the stdev is below threshold value
+    if var_name == "sea_surface_temperature":
+        threshold = 0.001
+        normalized = np.where(s <= threshold, 0, normalized)
+
+    return normalized
+
+
+def normalize_train_data(overwrite=False, verbose=1, vars_to_normalize="all"):
     """ 
     Normalize inputs and save. 
     """
 
-    vars_to_normalize = list(config.era5_variables_dict.keys())
-    vars_to_normalize.remove("sea_ice_cover")
-
+    if vars_to_normalize == "all":
+        vars_to_normalize = list(config.era5_variables_dict.keys())
+        vars_to_normalize.remove("sea_ice_cover")
+    
     save_dir = os.path.join(config.DATA_DIRECTORY, "sicpred/normalized_inputs")
 
     for var_name in vars_to_normalize:
@@ -76,13 +92,6 @@ def normalize_data(overwrite=False, verbose=1):
         monthly_means = da.groupby("time.month").mean("time")
         monthly_stdevs = da.groupby("time.month").std("time")
         print("done!")
-        
-        def normalize(x, m, s):
-            # Avoid divide by zero by setting normalized value to zero where std deviation is zero
-            with np.errstate(divide='ignore', invalid='ignore'):
-                normalized = (x - m) / s
-                normalized = np.where(s == 0, 0, normalized)  # Set to zero where std dev is zero
-            return normalized
 
         months = da['time'].dt.month
         normalized_da = xr.apply_ufunc(
@@ -90,6 +99,7 @@ def normalize_data(overwrite=False, verbose=1):
             da,
             monthly_means.sel(month=months),
             monthly_stdevs.sel(month=months),
+            var_name,
             output_dtypes=[da.dtype]
         )
 
