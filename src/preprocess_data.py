@@ -28,4 +28,8 @@ util.concatenate_linear_trend()
 util.remove_expver_from_era5()
 
 # normalize variables and save 
-util.normalize_train_data(overwrite=True)
+util.normalize_data()
+
+# generate data pairs
+util.prep_prediction_samples('sea_ice_only')
+util.prep_prediction_samples('simple')

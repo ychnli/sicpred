@@ -9,18 +9,6 @@ import os
 # Data preprocessing 
 ##########################################################################################
 
-def prep_prediction_samples(): 
-    """
-    Returns 
-    input tuple[0]: ndarray (n_samples, n_lat, n_lon, n_vars)
-    output tuple[1]: ndarray (n_samples, n_lat, n_lon)
-    """
-    input = None
-    output = None
-
-    return input, output 
-
-
 
 def write_nc_file(ds, save_path, overwrite, verbose=1):
     if type(overwrite) != bool:
@@ -53,9 +41,9 @@ def normalize(x, m, s, var_name=None):
     return normalized
 
 
-def normalize_train_data(overwrite=False, verbose=1, vars_to_normalize="all"):
+def normalize_data(overwrite=False, verbose=1, vars_to_normalize="all"):
     """ 
-    Normalize inputs and save. 
+    Normalize inputs based on statistics of the training data and save. 
     """
 
     if vars_to_normalize == "all":
@@ -113,7 +101,6 @@ def normalize_train_data(overwrite=False, verbose=1, vars_to_normalize="all"):
         print("done! \n\n")
 
 
-
 def remove_expver_from_era5(verbose=1):
     for var_name in config.era5_variables_dict.keys():
         if var_name == "geopotential":
@@ -138,7 +125,6 @@ def remove_expver_from_era5(verbose=1):
 
         print("done! \n\n")
         
-
 
 def concatenate_nsidc(working_path=None, overwrite=False):
     """ 
@@ -233,6 +219,119 @@ def concatenate_linear_trend(overwrite=False, verbose=1):
     print("saving...", end= '')
     write_nc_file(ds_concat, save_path, overwrite)
     print("done! \n\n")
+
+
+def prep_prediction_samples(input_config_name, overwrite=False, verbose=1): 
+    """
+    Returns 
+    input tuple[0]: ndarray (n_samples, n_lat, n_lon, n_vars)
+    output tuple[1]: ndarray (n_samples, n_lat, n_lon)
+    """
+    
+    save_directory = os.path.join(config.DATA_DIRECTORY, "sicpred/data_pairs_npy")
+    
+
+    # Get input data config
+    if input_config_name in config.input_configs.keys():
+        print(f"Prepping and saving data pairs for input config {input_config}")
+        input_config = config.input_configs[input_config_name]
+    else:
+        raise NameError(f"Input config not found in {config.input_configs.keys()}")
+    
+    # Note missing data for 1987 Dec and 1988 Jan. So remove those from the prediction months
+    first_range = pd.date_range('1981-01', pd.Timestamp('1987-12') - pd.DateOffset(months=max_month_lead_time+1), freq='MS')
+    second_range = pd.date_range(pd.Timestamp('1988-01') + pd.DateOffset(months=input_config['siconc']['lag']+1), '2024-01', freq='MS')
+    start_prediction_months = first_range.append(second_range)
+
+    # Define land mask using both SST and sea ice 
+    sst = xr.open_dataset(f"{DATA_DIRECTORY}/ERA5/sea_surface_temperature_SPS.nc").sst
+    land_mask_from_sst = np.isnan(sst.isel(time=0)).values
+
+    nsidc_sic = xr.open_dataset(f'{DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc')
+    land_mask_from_sic = np.logical_or(nsidc_sic.siconc.isel(time=0) == 2.53, nsidc_sic.siconc.isel(time=0) == 2.54)
+
+    land_mask = np.logical_or(land_mask_from_sst, land_mask_from_sic).data
+    land_mask = land_mask[np.newaxis, :, :]
+
+    data_da_dict = {}
+
+    for input_var, input_var_params in input_config.items():
+        if input_var == 'siconc':
+            data_da_dict[input_var] = xr.open_dataset(f"{DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc").siconc
+
+        elif input_var == 'siconc_linear_forecast':
+            if input_var_params['anom']: 
+                print("Have not calculated anomaly linear forecast. Defaulting to non-normalized values")
+            data_da_dict[input_var] = xr.open_dataset(f"{DATA_DIRECTORY}/sicpred/linear_forecasts/linear_forecast_all_years.nc").siconc
+        
+        elif input_var in ['cosine_of_init_month', 'sine_of_init_month']:
+            continue 
+
+        else:
+            if input_var_params['anom']:
+                data_da_dict[input_var] = xr.open_dataset(f"{DATA_DIRECTORY}/sicpred/normalized_inputs/{input_var}_norm.nc")[input_var_params['short_name']]
+            else:
+                data_da_dict[input_var] = xr.open_dataset(f"{DATA_DIRECTORY}/ERA5/{input_var}_SPS.nc")[input_var_params['short_name']]
+            
+    all_inputs = []
+    all_outputs = []
+
+    for start_prediction_month in start_prediction_months:
+        if verbose == 2: print(f"Concatenating inputs and target for init month {start_prediction_month}")
+        prediction_target_months = pd.date_range(start_prediction_month, \
+            start_prediction_month + pd.DateOffset(months=max_month_lead_time-1), freq="MS")
+        
+        # For each target, generate data pairs
+        input_list = []
+        for input_var, input_var_params in input_config.items():
+            if not input_var_params["include"]: 
+                continue 
+
+            if input_var == 'siconc_linear_forecast':
+                input_data_npy = data_da_dict[input_var].sel(time=prediction_target_months).data
+                
+            elif input_var == 'cosine_of_init_month':
+                input_data_npy = np.ones((1, 332, 316))
+                input_data_npy *= np.cos(2 * np.pi * start_prediction_month.month / 12)
+
+            elif input_var == 'sine_of_init_month':
+                input_data_npy = np.ones((1, 332, 316))
+                input_data_npy *= np.sin(2 * np.pi * start_prediction_month.month / 12)
+
+            else:
+                prediction_input_months = pd.date_range(start_prediction_month - pd.DateOffset(months=input_var_params["lag"]), \
+                    start_prediction_month - pd.DateOffset(months=1), freq="MS")
+                input_data_npy = data_da_dict[input_var].sel(time=prediction_input_months).data
+            
+            # Apply land mask. Land values go to 0 
+            if input_var_params['land_mask']:
+                land_mask_broadcast = np.repeat(land_mask, input_data_npy.shape[0], axis=0)
+                input_data_npy[land_mask_broadcast] = 0
+
+            input_list.append(input_data_npy)
+        
+        input_all_vars_npy = np.concatenate(input_list, axis=0)
+        target_npy = data_da_dict["siconc"].sel(time=prediction_target_months).data
+
+        # transpose arrays so that they are of shape (nx, ny, n_channels)
+        input_all_vars_npy = np.transpose(input_all_vars_npy, (1,2,0))
+        target_npy = np.transpose(target_npy, (1,2,0))
+
+        # add a new axis at the beginning for n_samples
+        input_all_vars_npy = input_all_vars_npy[np.newaxis,:,:,:]
+        target_npy = target_npy[np.newaxis,:,:,:]
+
+        all_inputs.append(input_all_vars_npy)
+        all_outputs.append(target_npy)
+
+    all_inputs = np.concatenate(all_inputs, axis=0)
+    all_outputs = np.concatenate(all_outputs, axis=0)
+
+    
+    print("Saving to .npy files in ")
+    
+    return input, output 
+
 
 ##########################################################################################
 # Statistical methods 
