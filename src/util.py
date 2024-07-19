@@ -26,15 +26,12 @@ def write_nc_file(ds, save_path, overwrite, verbose=1):
     if type(overwrite) != bool:
         raise TypeError("overwrite needs to be bool")
 
-    if overwrite:
-        if not os.path.exists(save_path):
-            if verbose == 2: print(f"Nothing to overwrite: {save_path} doesn't exist yet!")
-            return 
-
-        temp_path = save_path + '.tmp'
-        ds.to_netcdf(temp_path)
-        os.replace(temp_path, save_path)
-        if verbose == 2: print(f"Overwrote {save_path}")
+    if os.path.exists(save_path):
+        if overwrite:
+            temp_path = save_path + '.tmp'
+            ds.to_netcdf(temp_path)
+            os.replace(temp_path, save_path)
+            if verbose == 2: print(f"Overwrote {save_path}")
 
     else: 
         ds.to_netcdf(save_path)
@@ -75,22 +72,22 @@ def normalize_train_data(overwrite=False, verbose=1, vars_to_normalize="all"):
         print(f"Normalizing {var_name}...", end=" ")
         if var_name == "siconc":
             ds = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc")
-            da = ds[var_name].sel(time=config.TRAIN_MONTHS)
+            da = ds[var_name]
 
         elif var_name == "geopotential":
             ds = xr.open_dataset(f"{config.DATA_DIRECTORY}/ERA5/{var_name}_500hPa_SPS.nc")
-            da = ds[config.era5_variables_dict[var_name]["short_name"]].sel(time=config.TRAIN_MONTHS)
+            da = ds[config.era5_variables_dict[var_name]["short_name"]]
 
         else:
             if not os.path.exists(f"{config.DATA_DIRECTORY}/ERA5/{var_name}_SPS.nc"):
                 raise FileNotFoundError(f"{config.DATA_DIRECTORY}/ERA5/{var_name}_SPS.nc does not exist!")
 
             ds = xr.open_dataset(f"{config.DATA_DIRECTORY}/ERA5/{var_name}_SPS.nc")
-            da = ds[config.era5_variables_dict[var_name]["short_name"]].sel(time=config.TRAIN_MONTHS)
+            da = ds[config.era5_variables_dict[var_name]["short_name"]]
 
         print("calculating means and stdev...", end=" ")
-        monthly_means = da.groupby("time.month").mean("time")
-        monthly_stdevs = da.groupby("time.month").std("time")
+        monthly_means = da.sel(time=config.TRAIN_MONTHS).groupby("time.month").mean("time")
+        monthly_stdevs = da.sel(time=config.TRAIN_MONTHS).groupby("time.month").std("time")
         print("done!")
 
         months = da['time'].dt.month
@@ -210,6 +207,32 @@ def remove_missing_data_nsidc(verbose=1):
     nsidc_sic.to_netcdf(temp_path)
     os.replace(temp_path, f'{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc')
 
+
+def concatenate_linear_trend(overwrite=False, verbose=1):
+    """
+    Concatenates the linear trend files
+    """
+    save_path = os.path.join(config.DATA_DIRECTORY, 'sicpred/linear_forecasts/linear_forecast_all_years.nc')
+
+    if not overwrite and os.path.exists(save_path):
+        if verbose == 2: print(f"Already found file at {save_path}")
+        return 
+    
+    working_path = os.path.join(config.DATA_DIRECTORY, 'sicpred/linear_forecasts/')
+    files_to_concatenate = os.listdir(working_path)
+    files_to_concatenate = [os.path.join(working_path, f) for f in files_to_concatenate]
+    files_to_concatenate = sorted(files_to_concatenate)
+
+    if len(files_to_concatenate) == 0:
+        print(f"found no files to concatenate in {working_path}")
+        return
+
+    print("Concatenating linear trend files...", end='')
+    ds_concat = xr.open_mfdataset(files_to_concatenate, combine="nested", concat_dim='time')
+    
+    print("saving...", end= '')
+    write_nc_file(ds_concat, save_path, overwrite)
+    print("done! \n\n")
 
 ##########################################################################################
 # Statistical methods 
