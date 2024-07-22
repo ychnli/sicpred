@@ -6,6 +6,12 @@ from time import time
 import os
 import config
 import util 
+import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Conv2D, BatchNormalization, UpSampling2D, \
+    concatenate, MaxPooling2D, Input
+from tensorflow.keras.optimizers import Adam
+
 
 
 def linear_trend(target_month, save_path, linear_years="all", verbose=1):
@@ -92,5 +98,50 @@ def linear_trend(target_month, save_path, linear_years="all", verbose=1):
 def anomaly_persistence():
     return None
 
-def unet():
-    return None
+def unet(input_shape, loss, weighted_metrics, n_filters_factor=1, filter_size=3):
+    inputs = Input(shape=input_shape)
+
+    conv1 = Conv2D(np.int(64 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(inputs)
+    conv1 = Conv2D(np.int(64 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv1)
+    bn1 = BatchNormalization(axis=-1)(conv1)
+    pool1 = MaxPooling2D(pool_size=(2, 2))(bn1)
+
+    conv2 = Conv2D(np.int(128 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(pool1)
+    conv2 = Conv2D(np.int(128 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv2)
+    bn2 = BatchNormalization(axis=-1)(conv2)
+    pool2 = MaxPooling2D(pool_size=(2, 2))(bn2)
+
+    conv3 = Conv2D(np.int(256 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(pool2)
+    conv3 = Conv2D(np.int(256 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv3)
+    bn3 = BatchNormalization(axis=-1)(conv3)
+    pool3 = MaxPooling2D(pool_size=(2, 2))(bn3)
+
+    conv4 = Conv2D(np.int(512 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(pool3)
+    conv4 = Conv2D(np.int(512 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv4)
+    bn4 = BatchNormalization(axis=-1)(conv4)
+
+    up5 = Conv2D(np.int(256 * n_filters_factor), 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2,2), interpolation='nearest')(bn4))
+    merge5 = concatenate([bn3, up5], axis=3)
+    conv5 = Conv2D(np.int(256 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(merge5)
+    conv5 = Conv2D(np.int(256 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv5)
+    bn5 = BatchNormalization(axis=-1)(conv5)
+
+    up6 = Conv2D(np.int(128 * n_filters_factor), 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2,2), interpolation='nearest')(bn5))
+    merge6 = concatenate([bn2,up6], axis=3)
+    conv6 = Conv2D(np.int(128 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(merge6)
+    conv6 = Conv2D(np.int(128 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv6)
+    bn6 = BatchNormalization(axis=-1)(conv6)
+
+    up7 = Conv2D(np.int(64*n_filters_factor), 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2,2), interpolation='nearest')(bn6))
+    merge7 = concatenate([bn1,up7], axis=3)
+    conv7 = Conv2D(np.int(64*n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(merge7)
+    conv7 = Conv2D(np.int(64*n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv7)
+    conv7 = Conv2D(np.int(64*n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv7)
+
+    final_layer = Conv2D(1, (1, 1), activation='sigmoid', kernel_initializer='he_normal')(conv7)
+
+    model = Model(inputs, final_layer)
+
+    model.compile(optimizer=Adam(lr=learning_rate), loss=loss, weighted_metrics=weighted_metrics)
+
+    return model

@@ -31,5 +31,6 @@ util.remove_expver_from_era5()
 util.normalize_data()
 
 # generate data pairs
-util.prep_prediction_samples('sea_ice_only')
-util.prep_prediction_samples('simple')
+util.prep_prediction_samples('sea_ice_only', verbose=2)
+util.prep_prediction_samples('simple', verbose=2)
+util.prep_prediction_samples('all', verbose=2)
