@@ -356,7 +356,7 @@ def prep_prediction_samples(input_config_name, overwrite=False, verbose=1):
     write_hdf5_file(all_inputs, inputs_save_path, f"inputs_{input_config_name}")
 
     if not os.path.exists(outputs_save_path) or overwrite:
-        write_hdf5_file(all_outputs, outputs_save_path, f"targets_{input_config_name}")
+        write_hdf5_file(all_outputs, outputs_save_path, f"targets")
 
     print("done! \n\n")
     
