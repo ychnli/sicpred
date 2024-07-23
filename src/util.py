@@ -3,10 +3,11 @@ import numpy as np
 import pandas as pd
 from time import time
 import config
+import h5py
 import os
 
 ##########################################################################################
-# Data preprocessing 
+# File I/O wrappers
 ##########################################################################################
 
 
@@ -24,6 +25,27 @@ def write_nc_file(ds, save_path, overwrite, verbose=1):
     else: 
         ds.to_netcdf(save_path)
         if verbose == 2: print(f"Saved to {save_path}")
+
+
+def write_hdf5_file(data, save_path, dataset_name, verbose=1):
+    """
+    Saves hdf5 file to save_path. 
+
+    Params:
+        data:           numpy ndarray 
+        save_path:      (str) valid file path ending in .h5
+        dataset_name:   (str) name of dataset 
+    """
+
+    with h5py.File(save_path, 'w') as f:
+        f.create_dataset(dataset_name, data=data)
+
+    if verbose == 2: print(f'Saved to {save_path}')
+
+
+##########################################################################################
+# Data preprocessing 
+##########################################################################################
 
 
 def normalize(x, m, s, var_name=None):
@@ -231,8 +253,8 @@ def prep_prediction_samples(input_config_name, overwrite=False, verbose=1):
     save_directory = os.path.join(config.DATA_DIRECTORY, "sicpred/data_pairs_npy")
     os.makedirs(save_directory, exist_ok=True)
 
-    inputs_save_path = os.path.join(save_directory, f"inputs_{input_config_name}.npy")
-    outputs_save_path = os.path.join(save_directory, f"targets_{input_config_name}.npy")
+    inputs_save_path = os.path.join(save_directory, f"inputs_{input_config_name}.h5")
+    outputs_save_path = os.path.join(save_directory, f"targets.h5")
 
     if os.path.exists(inputs_save_path) and os.path.exists(outputs_save_path) and not overwrite:
         print(f"Already found saved {inputs_save_path} and {outputs_save_path}. Skipping...")
@@ -320,10 +342,6 @@ def prep_prediction_samples(input_config_name, overwrite=False, verbose=1):
         input_all_vars_npy = np.concatenate(input_list, axis=0)
         target_npy = data_da_dict["siconc"].sel(time=prediction_target_months).data
 
-        # transpose arrays so that they are of shape (nx, ny, n_channels)
-        input_all_vars_npy = np.transpose(input_all_vars_npy, (1,2,0))
-        target_npy = np.transpose(target_npy, (1,2,0))
-
         # add a new axis at the beginning for n_samples
         input_all_vars_npy = input_all_vars_npy[np.newaxis,:,:,:]
         target_npy = target_npy[np.newaxis,:,:,:]
@@ -334,9 +352,12 @@ def prep_prediction_samples(input_config_name, overwrite=False, verbose=1):
     all_inputs = np.concatenate(all_inputs, axis=0)
     all_outputs = np.concatenate(all_outputs, axis=0)
 
-    print(f"Saving to .npy files to {save_directory}...", end='')
-    np.save(inputs_save_path, all_inputs)
-    np.save(outputs_save_path, all_outputs)
+    print(f"Saving to .h5 files to {save_directory}...", end='')
+    write_hdf5_file(all_inputs, inputs_save_path, f"inputs_{input_config_name}")
+
+    if not os.path.exists(outputs_save_path) or overwrite:
+        write_hdf5_file(all_outputs, outputs_save_path, f"targets_{input_config_name}")
+
     print("done! \n\n")
     
 
