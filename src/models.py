@@ -6,12 +6,10 @@ from time import time
 import os
 import config
 import util 
-import tensorflow as tf
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Conv2D, BatchNormalization, UpSampling2D, \
-    concatenate, MaxPooling2D, Input
-from tensorflow.keras.optimizers import Adam
-
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
 
 
 def linear_trend(target_month, save_path, linear_years="all", verbose=1):
@@ -95,53 +93,53 @@ def linear_trend(target_month, save_path, linear_years="all", verbose=1):
 
     return prediction
 
+
 def anomaly_persistence():
     return None
 
-def unet(input_shape, loss, weighted_metrics, n_filters_factor=1, filter_size=3):
-    inputs = Input(shape=input_shape)
 
-    conv1 = Conv2D(np.int(64 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(inputs)
-    conv1 = Conv2D(np.int(64 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv1)
-    bn1 = BatchNormalization(axis=-1)(conv1)
-    pool1 = MaxPooling2D(pool_size=(2, 2))(bn1)
-
-    conv2 = Conv2D(np.int(128 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(pool1)
-    conv2 = Conv2D(np.int(128 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv2)
-    bn2 = BatchNormalization(axis=-1)(conv2)
-    pool2 = MaxPooling2D(pool_size=(2, 2))(bn2)
-
-    conv3 = Conv2D(np.int(256 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(pool2)
-    conv3 = Conv2D(np.int(256 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv3)
-    bn3 = BatchNormalization(axis=-1)(conv3)
-    pool3 = MaxPooling2D(pool_size=(2, 2))(bn3)
-
-    conv4 = Conv2D(np.int(512 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(pool3)
-    conv4 = Conv2D(np.int(512 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv4)
-    bn4 = BatchNormalization(axis=-1)(conv4)
-
-    up5 = Conv2D(np.int(256 * n_filters_factor), 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2,2), interpolation='nearest')(bn4))
-    merge5 = concatenate([bn3, up5], axis=3)
-    conv5 = Conv2D(np.int(256 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(merge5)
-    conv5 = Conv2D(np.int(256 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv5)
-    bn5 = BatchNormalization(axis=-1)(conv5)
-
-    up6 = Conv2D(np.int(128 * n_filters_factor), 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2,2), interpolation='nearest')(bn5))
-    merge6 = concatenate([bn2,up6], axis=3)
-    conv6 = Conv2D(np.int(128 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(merge6)
-    conv6 = Conv2D(np.int(128 * n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv6)
-    bn6 = BatchNormalization(axis=-1)(conv6)
-
-    up7 = Conv2D(np.int(64*n_filters_factor), 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2,2), interpolation='nearest')(bn6))
-    merge7 = concatenate([bn1,up7], axis=3)
-    conv7 = Conv2D(np.int(64*n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(merge7)
-    conv7 = Conv2D(np.int(64*n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv7)
-    conv7 = Conv2D(np.int(64*n_filters_factor), filter_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv7)
-
-    final_layer = Conv2D(1, (1, 1), activation='sigmoid', kernel_initializer='he_normal')(conv7)
-
-    model = Model(inputs, final_layer)
-
-    model.compile(optimizer=Adam(lr=learning_rate), loss=loss, weighted_metrics=weighted_metrics)
-
-    return model
+class UNet(nn.Module):
+    def __init__(self, in_channels, out_channels, n_filters_factor=1, filter_size=3):
+        super(UNet, self).__init__()
+        self.encoder1 = self.conv_block(in_channels, int(64 * n_filters_factor), filter_size)
+        self.encoder2 = self.conv_block(int(64 * n_filters_factor), int(128 * n_filters_factor), filter_size)
+        self.encoder3 = self.conv_block(int(128 * n_filters_factor), int(256 * n_filters_factor), filter_size)
+        self.bottleneck = self.conv_block(int(256 * n_filters_factor), int(512 * n_filters_factor), filter_size)
+        
+        self.decoder1 = self.conv_block(int(512 * n_filters_factor) + int(256 * n_filters_factor), int(256 * n_filters_factor), filter_size)
+        self.decoder2 = self.conv_block(int(256 * n_filters_factor) + int(128 * n_filters_factor), int(128 * n_filters_factor), filter_size)
+        self.decoder3 = self.conv_block(int(128 * n_filters_factor) + int(64 * n_filters_factor), int(64 * n_filters_factor), filter_size)
+        
+        self.final_conv = nn.Conv2d(int(64 * n_filters_factor), out_channels, kernel_size=1)
+        
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        
+    def conv_block(self, in_channels, out_channels, filter_size):
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=filter_size, padding=filter_size//2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=filter_size, padding=filter_size//2),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(out_channels)
+        )
+    
+    def forward(self, x):
+        enc1 = self.encoder1(x)
+        enc2 = self.encoder2(self.pool(enc1))
+        enc3 = self.encoder3(self.pool(enc2))
+        bottleneck = self.bottleneck(self.pool(enc3))
+        
+        dec1 = self.upsample(bottleneck)
+        dec1 = torch.cat((enc3, dec1), dim=1)
+        dec1 = self.decoder1(dec1)
+        
+        dec2 = self.upsample(dec1)
+        dec2 = torch.cat((enc2, dec2), dim=1)
+        dec2 = self.decoder2(dec2)
+        
+        dec3 = self.upsample(dec2)
+        dec3 = torch.cat((enc1, dec3), dim=1)
+        dec3 = self.decoder3(dec3)
+        
+        return torch.sigmoid(self.final_conv(dec3))

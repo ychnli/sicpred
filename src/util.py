@@ -341,6 +341,8 @@ def prep_prediction_samples(input_config_name, overwrite=False, verbose=1):
         
         input_all_vars_npy = np.concatenate(input_list, axis=0)
         target_npy = data_da_dict["siconc"].sel(time=prediction_target_months).data
+        land_mask_broadcast = np.repeat(land_mask, config.max_month_lead_time, axis=0)
+        target_npy[land_mask_broadcast] = 0
 
         # add a new axis at the beginning for n_samples
         input_all_vars_npy = input_all_vars_npy[np.newaxis,:,:,:]
@@ -356,10 +358,44 @@ def prep_prediction_samples(input_config_name, overwrite=False, verbose=1):
     write_hdf5_file(all_inputs, inputs_save_path, f"inputs_{input_config_name}")
 
     if not os.path.exists(outputs_save_path) or overwrite:
-        write_hdf5_file(all_outputs, outputs_save_path, f"targets")
+        write_hdf5_file(all_outputs, outputs_save_path, f"targets_sea_ice_only")
 
     print("done! \n\n")
     
+
+
+def generate_ice_free_mask(overwrite=False):
+    """
+    Generates a mask that is True if there is ever nonzero sea ice concentration at 
+    that grid point and False if always zero. Exists for each month in the year 
+    """
+
+    save_path = os.path.join(config.DATA_DIRECTORY, "NSIDC/monthly_ice_mask.nc")
+
+    if os.path.exists(save_path) and not overwrite:
+        return 
+    
+    print("Generating ice cover mask for custom loss function")
+
+    nsidc_sic = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc")
+
+    monthly_means = nsidc_sic.siconc.groupby('time.month').mean('time')
+    
+    # apply land mask
+    sst = xr.open_dataset(f"{config.DATA_DIRECTORY}/ERA5/sea_surface_temperature_SPS.nc").sst
+    land_mask_from_sst = np.isnan(sst.isel(time=0)).values
+    land_mask_from_sic = np.logical_or(nsidc_sic.siconc.isel(time=0) == 2.53, nsidc_sic.siconc.isel(time=0) == 2.54)
+    land_mask = np.logical_or(land_mask_from_sst, land_mask_from_sic).data
+
+    # find ice mask for each month
+    ice_mask = monthly_means != 0
+    ice_mask = ice_mask.where(~land_mask, 0)
+
+    ice_mask_ds = ice_mask.to_dataset(name="mask")
+
+    write_nc_file(ice_mask_ds, save_path, overwrite)
+
+    print(f"done! \n\n")
 
 
 ##########################################################################################
