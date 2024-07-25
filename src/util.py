@@ -364,36 +364,42 @@ def prep_prediction_samples(input_config_name, overwrite=False, verbose=1):
     
 
 
-def generate_ice_free_mask(overwrite=False):
+def generate_masks(overwrite=False):
     """
     Generates a mask that is True if there is ever nonzero sea ice concentration at 
     that grid point and False if always zero. Exists for each month in the year 
     """
 
-    save_path = os.path.join(config.DATA_DIRECTORY, "NSIDC/monthly_ice_mask.nc")
+    ice_mask_save_path = os.path.join(config.DATA_DIRECTORY, "NSIDC/monthly_ice_mask.nc")
+    land_mask_save_path = os.path.join(config.DATA_DIRECTORY, "NSIDC/land_mask.nc")
 
-    if os.path.exists(save_path) and not overwrite:
+    if os.path.exists(ice_mask_save_path) and os.path.exists(land_mask_save_path) and not overwrite:
         return 
     
-    print("Generating ice cover mask for custom loss function")
-
+    # find land mask
+    print("Generating and saving land mask")
     nsidc_sic = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc")
-
-    monthly_means = nsidc_sic.siconc.groupby('time.month').mean('time')
-    
-    # apply land mask
     sst = xr.open_dataset(f"{config.DATA_DIRECTORY}/ERA5/sea_surface_temperature_SPS.nc").sst
+
     land_mask_from_sst = np.isnan(sst.isel(time=0)).values
     land_mask_from_sic = np.logical_or(nsidc_sic.siconc.isel(time=0) == 2.53, nsidc_sic.siconc.isel(time=0) == 2.54)
-    land_mask = np.logical_or(land_mask_from_sst, land_mask_from_sic).data
+    land_mask = np.logical_or(land_mask_from_sst, land_mask_from_sic)
+    land_mask_ds = land_mask.to_dataset(name="mask")
+
+    write_nc_file(land_mask_ds, land_mask_save_path, overwrite)
+    print(f"done!")
+
+    print("Generating and saving ice cover mask for custom loss function")
+
+    monthly_means = nsidc_sic.siconc.groupby('time.month').mean('time')
 
     # find ice mask for each month
     ice_mask = monthly_means != 0
-    ice_mask = ice_mask.where(~land_mask, 0)
+    ice_mask = ice_mask.where(~land_mask.data, 0)
 
     ice_mask_ds = ice_mask.to_dataset(name="mask")
 
-    write_nc_file(ice_mask_ds, save_path, overwrite)
+    write_nc_file(ice_mask_ds, ice_mask_save_path, overwrite)
 
     print(f"done! \n\n")
 

@@ -31,7 +31,7 @@ util.remove_expver_from_era5()
 util.normalize_data()
 
 # generate ice mask for custom loss function
-util.generate_ice_free_mask()
+util.generate_masks(overwrite=True)
 
 # generate data pairs
 util.prep_prediction_samples('sea_ice_only', verbose=2)
