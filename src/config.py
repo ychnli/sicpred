@@ -18,15 +18,14 @@ era5_variables_dict = {
     'geopotential': {'plevel': '500', 'short_name': 'z'}
 }
 
+
+# Model configuration parrameters
 TRAIN_MONTHS = pd.date_range(start='1981-01-01', end='2014-12-01', freq='MS')
-
 VAL_MONTHS = pd.date_range(start='2015-01-01', end='2018-12-01', freq='MS')
-
 TEST_MONTHS = pd.date_range(start='2019-01-01', end='2024-06-01', freq='MS')
 
 # how many months to predict into the future
 max_month_lead_time = 6 
-
 
 # Different configuration settings for input variables
 
@@ -176,7 +175,6 @@ input_config_all = {
         'include': True,'land_mask': False
     }
 }
-
 
 input_configs = {
     'sea_ice_only': input_config_siconly,
