@@ -104,6 +104,8 @@ class UNetRes3(nn.Module):
     number at the end of encoder and decoder blocks denote their depth in 
     the network (thus we have, E1 -> E2 -> E3 -> B -> D3 -> D2 -> D1) where
     B is the bottleneck block
+
+    mode: regression or classification
     """
 
     def __init__(self, in_channels, out_channels, device, spatial_shape=(336, 320), n_channels_factor=1, filter_size=3):

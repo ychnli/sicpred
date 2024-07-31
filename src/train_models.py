@@ -46,10 +46,10 @@ in_channels_config = {
 }
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-batch_sizes = [16, 32]
+batch_sizes = [16, 32, 4, 2, 1]
 learning_rates = [1e-4, 1e-5]
-input_configs = ["simple", "all"]
-architectures = ["UNetRes3", "UNetRes4"]
+input_configs = ["simple"]
+architectures = ["UNetRes3"]
 
 for i,b in enumerate(batch_sizes):
     for j,lr in enumerate(learning_rates):
@@ -59,6 +59,11 @@ for i,b in enumerate(batch_sizes):
                 model_hyperparam_configs["architecture"] = arch
                 model_hyperparam_configs["lr"] = lr
                 model_hyperparam_configs["input_config"] = input_config
+
+                if os.path.exists(f"{config.DATA_DIRECTORY}/sicpred/models/{model_hyperparam_configs['name']}.pth"):
+                    continue 
+                
+                print(f"Training {arch} with lr={lr} and input_config={input_config} and B={b}")
 
                 if arch == "UNetRes3":
                     model = models.UNetRes3(in_channels=in_channels_config[model_hyperparam_configs["input_config"]], \
