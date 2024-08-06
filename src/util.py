@@ -264,9 +264,7 @@ def concatenate_linear_trend(overwrite=False, verbose=1):
 
 def prep_prediction_samples(input_config_name, overwrite=False, verbose=1): 
     """
-    Returns 
-    input tuple[0]: ndarray (n_samples, n_lat, n_lon, n_vars)
-    output tuple[1]: ndarray (n_samples, n_lat, n_lon)
+    Collects the input variables and target outputs and saves to file 
     """
     
     save_directory = os.path.join(config.DATA_DIRECTORY, "sicpred/data_pairs_npy")
