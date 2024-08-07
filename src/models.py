@@ -109,7 +109,7 @@ class UNetRes3(nn.Module):
     """
 
     def __init__(self, in_channels, out_channels, mode, device, spatial_shape=(336, 320), 
-                n_channels_factor=1, filter_size=3, T=1.0, n_classes=3):
+                n_channels_factor=1, filter_size=3, T=1.0, n_classes=2):
 
         super(UNetRes3, self).__init__()
         self.mode = mode 
@@ -156,6 +156,9 @@ class UNetRes3(nn.Module):
             nn.ReLU(inplace=True),
             nn.BatchNorm2d(out_channels)
         )
+
+    def set_temperature(self, T):
+        self.T = T
     
     def conv(self, in_channels, out_channels, filter_size):
         return nn.Sequential(
@@ -216,8 +219,11 @@ class UNetRes4(UNetRes3):
     B is the bottleneck block
     """
 
-    def __init__(self, in_channels, out_channels, device, spatial_shape=(336, 320), n_channels_factor=1, filter_size=3):
-        super(UNetRes4, self).__init__(in_channels, out_channels, device, spatial_shape, n_channels_factor, filter_size)
+    def __init__(self, in_channels, out_channels, mode, device, spatial_shape=(336, 320), 
+                n_channels_factor=1, filter_size=3, T=1.0, n_classes=2):
+
+        super(UNetRes4, self).__init__(in_channels, out_channels, mode, device, spatial_shape, \
+                                        n_channels_factor, filter_size, T, n_classes)
 
         self.encoder4 = self.conv_block(int(256 * n_channels_factor), int(512 * n_channels_factor), filter_size)
         self.bottleneck = self.conv_block(int(512 * n_channels_factor), int(1024 * n_channels_factor), filter_size)
