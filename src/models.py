@@ -105,12 +105,16 @@ class UNetRes3(nn.Module):
     the network (thus we have, E1 -> E2 -> E3 -> B -> D3 -> D2 -> D1) where
     B is the bottleneck block
 
-    mode: regression or classification
+    mode: (str) 'regression' or 'classification'
     """
 
-    def __init__(self, in_channels, out_channels, device, spatial_shape=(336, 320), n_channels_factor=1, filter_size=3):
+    def __init__(self, in_channels, out_channels, mode, device, spatial_shape=(336, 320), 
+                n_channels_factor=1, filter_size=3, T=1.0, n_classes=3):
+
         super(UNetRes3, self).__init__()
-        
+        self.mode = mode 
+        self.T = T # temperature scaling factor 
+
         self.encoder1 = self.conv_block(in_channels, int(64 * n_channels_factor), filter_size)
         self.encoder2 = self.conv_block(int(64 * n_channels_factor), int(128 * n_channels_factor), filter_size)
         self.encoder3 = self.conv_block(int(128 * n_channels_factor), int(256 * n_channels_factor), filter_size)
@@ -126,8 +130,9 @@ class UNetRes3(nn.Module):
         self.decoder1_conv_1 = self.conv(int(128 * n_channels_factor), int(64 * n_channels_factor), filter_size)
         self.decoder1_conv_2 = self.conv(int(64 * n_channels_factor), int(64 * n_channels_factor), filter_size)
         
-        self.final_conv = nn.Conv2d(int(64 * n_channels_factor), out_channels, kernel_size=1)
-        
+        self.final_conv_reg = nn.Conv2d(int(64 * n_channels_factor), out_channels, kernel_size=1)
+        self.final_convs_class = [nn.Conv2d(int(64 * n_channels_factor), n_classes, kernel_size=1) for i in range(out_channels)]
+
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
         self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
 
@@ -181,11 +186,24 @@ class UNetRes3(nn.Module):
         dec1 = self.decoder1_conv_2(dec1)
         dec1 = self.decoder1_conv_2(dec1)
 
-        output = torch.sigmoid(self.final_conv(dec1))
-        
-        # Apply the land mask
-        output = output * self.land_mask
-        
+        if self.mode == "regression":
+            output = torch.sigmoid(self.final_conv_reg(dec1))
+            
+            # Apply the land mask
+            output = output * self.land_mask
+
+        elif self.mode == "classification": 
+            final_logits = torch.stack([self.final_convs_class[i](dec1) for i in range(out_channels)], dim=2)
+            final_logits = final_logits.view(-1, 6, 3, spatial_shape[0], spatial_shape[1])
+            final_logits = final_logits / self.T  # Apply temperature scaling
+            output = F.softmax(final_logits, dim=2)  
+
+            land_mask = self.land_mask.unsqueeze(2)  # Add a class dimension
+            output = output * land_mask
+
+            # for the no sea ice class, the land should be automatically assigned probability 1  
+            output[:, :, 0, :, :] += (~land_mask[:, :, 0, :, :])
+
         return output
 
 
