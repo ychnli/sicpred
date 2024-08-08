@@ -89,13 +89,20 @@ def normalize_data(overwrite=False, verbose=1, vars_to_normalize="all"):
 
     if vars_to_normalize == "all":
         vars_to_normalize = list(config.era5_variables_dict.keys())
+
+        # This is the ERA5 boundary condition sea ice, which is not the same as the one we use
         vars_to_normalize.remove("sea_ice_cover")
+
+        # Use this as the name instead
+        vars_to_normalize.append("siconc")
     
+    if verbose >= 1: print(f"Normalizing variables {vars_to_normalize}")
+
     save_dir = os.path.join(config.DATA_DIRECTORY, "sicpred/normalized_inputs")
 
     for var_name in vars_to_normalize:
         if os.path.exists(os.path.join(save_dir, f"{var_name}_norm.nc")) and not overwrite:
-            if verbose == 1: print(f"Already found normalized file for {var_name}. Skipping...")
+            if verbose >= 1: print(f"Already found normalized file for {var_name}. Skipping...")
             continue
 
         print(f"Normalizing {var_name}...", end=" ")
@@ -115,8 +122,9 @@ def normalize_data(overwrite=False, verbose=1, vars_to_normalize="all"):
             da = ds[config.era5_variables_dict[var_name]["short_name"]]
 
         print("calculating means and stdev...", end=" ")
-        monthly_means = da.sel(time=config.TRAIN_MONTHS).groupby("time.month").mean("time")
-        monthly_stdevs = da.sel(time=config.TRAIN_MONTHS).groupby("time.month").std("time")
+        time_subset = config.TRAIN_MONTHS.intersection(da.time)
+        monthly_means = da.sel(time=time_subset).groupby("time.month").mean("time")
+        monthly_stdevs = da.sel(time=time_subset).groupby("time.month").std("time")
         print("done!")
 
         months = da['time'].dt.month
@@ -128,10 +136,14 @@ def normalize_data(overwrite=False, verbose=1, vars_to_normalize="all"):
             var_name,
             output_dtypes=[da.dtype]
         )
-
-        normalized_ds = normalized_da.to_dataset(name=config.era5_variables_dict[var_name]["short_name"])
-        monthly_means_ds = monthly_means.to_dataset(name=config.era5_variables_dict[var_name]["short_name"])
-        monthly_stdevs_ds = monthly_stdevs.to_dataset(name=config.era5_variables_dict[var_name]["short_name"])
+        if var_name != "siconc":
+            ds_name = config.era5_variables_dict[var_name]["short_name"] 
+        else: 
+            ds_name = "siconc" 
+        
+        normalized_ds = normalized_da.to_dataset(name=ds_name)
+        monthly_means_ds = monthly_means.to_dataset(name=ds_name)
+        monthly_stdevs_ds = monthly_stdevs.to_dataset(name=ds_name)
 
         # Make a new folder to save the normalized variables 
         os.makedirs(save_dir, exist_ok=True)
@@ -143,6 +155,7 @@ def normalize_data(overwrite=False, verbose=1, vars_to_normalize="all"):
 
 
 def remove_expver_from_era5(verbose=1):
+    if verbose >= 1: print("Removing expver dimension from ERA5 variables")
     for var_name in config.era5_variables_dict.keys():
         if var_name == "geopotential":
             file_path = os.path.join(config.DATA_DIRECTORY, "ERA5/geopotential_500hPa_SPS.nc")
@@ -155,23 +168,24 @@ def remove_expver_from_era5(verbose=1):
             if verbose == 1:
                 continue
             elif verbose > 1: 
-                print(f"expver not found in {variable}. Skipping... ")
+                print(f"expver not found in {var_name}. Skipping... ")
                 continue
             else: continue 
 
-        print(f"Removing expver dimension from {var_name}...", end=" ")
+        print(f"Removing expver dimension from {var_name}...", end=' ')
         combined_ds = ds.sel(expver=1).combine_first(ds.sel(expver=5))
         
         write_nc_file(combined_ds, file_path, overwrite=True)
+        print("saved!")
 
-        print("done! \n\n")
+    print("done! \n\n")
         
 
-def concatenate_nsidc(working_path=None, overwrite=False):
+def concatenate_nsidc(verbose=1, working_path=None, overwrite=False):
     """ 
     Merge the NSIDC data into one netCDF file called seaice_conc_monthly_all 
     """
-    print("Merging monthly NSIDC files... ", end="")
+    print("Merging monthly NSIDC files")
     if working_path == None:
         working_path = os.path.join(config.DATA_DIRECTORY, 'NSIDC')
 
@@ -217,6 +231,7 @@ def remove_missing_data_nsidc(verbose=1):
     we don't get NaNs messing up averaging or trend computations 
     """
 
+    if verbose >= 1: print("Checking for missing data in NSIDC sea ice")
     nsidc_sic = xr.open_dataset(f'{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc')
 
     # The missing data lives as NaN. Check if we need to get rid of it by finding years where
@@ -224,10 +239,10 @@ def remove_missing_data_nsidc(verbose=1):
     needs_fixing = len(nsidc_sic.time[np.isnan(nsidc_sic.siconc).sum(dim=('x', 'y')) != 0]) != 0 
 
     if not needs_fixing:
-        if verbose == 2: print("Didn't find any NaN values in NSIDC dataset. Skipping...")
+        if verbose >= 2: print("Didn't find any NaN values in NSIDC dataset. Skipping... \n\n")
         return 
     
-    if verbose == 1: print("Removing missing ice data in 1987 Dec and 1988 Jan...")
+    if verbose >= 1: print("Removing missing ice data in 1987 Dec and 1988 Jan...")
     nsidc_sic = nsidc_sic.sel(time=nsidc_sic.time[np.isnan(nsidc_sic.siconc).sum(dim=('x', 'y')) == 0])
 
     temp_path = f'{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc.tmp'
@@ -241,8 +256,10 @@ def concatenate_linear_trend(overwrite=False, verbose=1):
     """
     save_path = os.path.join(config.DATA_DIRECTORY, 'sicpred/linear_forecasts/linear_forecast_all_years.nc')
 
+    if verbose >= 1: print("Concatenating linear trend data into one file")
+
     if not overwrite and os.path.exists(save_path):
-        if verbose == 2: print(f"Already found file at {save_path}")
+        if verbose >= 2: print(f"Already found file at {save_path}. Skipping... \n\n")
         return 
     
     working_path = os.path.join(config.DATA_DIRECTORY, 'sicpred/linear_forecasts/')
@@ -302,28 +319,29 @@ def prep_prediction_samples(input_config_name, overwrite=False, verbose=1):
     data_da_dict = {}
 
     for input_var, input_var_params in input_config.items():
-        if input_var == 'siconc':
-            data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc").siconc
-
-        elif input_var == 'siconc_linear_forecast':
+        if input_var == 'siconc_linear_forecast':
             if input_var_params['anom']: 
                 print("Have not calculated anomaly linear forecast. Defaulting to non-normalized values")
             data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/sicpred/linear_forecasts/linear_forecast_all_years.nc").siconc
         
         elif input_var in ['cosine_of_init_month', 'sine_of_init_month']:
+            # These will get generated within this function 
             continue 
 
         else:
             if input_var_params['anom']:
                 data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/sicpred/normalized_inputs/{input_var}_norm.nc")[input_var_params['short_name']]
             else:
-                data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/ERA5/{input_var}_SPS.nc")[input_var_params['short_name']]
-            
+                if input_var == 'siconc':
+                    data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc").siconc
+                else: 
+                    data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/ERA5/{input_var}_SPS.nc")[input_var_params['short_name']]
+
     all_inputs = []
     all_outputs = []
 
     for start_prediction_month in start_prediction_months:
-        if verbose == 2: print(f"Concatenating inputs and target for init month {start_prediction_month}")
+        if verbose >= 2: print(f"Concatenating inputs and target for init month {start_prediction_month}")
         prediction_target_months = pd.date_range(start_prediction_month, \
             start_prediction_month + pd.DateOffset(months=config.max_month_lead_time-1), freq="MS")
         
@@ -381,16 +399,19 @@ def prep_prediction_samples(input_config_name, overwrite=False, verbose=1):
     
 
 
-def generate_masks(overwrite=False):
+def generate_masks(overwrite=False, verbose=1):
     """
     Generates a mask that is True if there is ever nonzero sea ice concentration at 
     that grid point and False if always zero. Exists for each month in the year 
     """
 
+    if verbose >= 1: print("Generating land and ice masks")
+
     ice_mask_save_path = os.path.join(config.DATA_DIRECTORY, "NSIDC/monthly_ice_mask.nc")
     land_mask_save_path = os.path.join(config.DATA_DIRECTORY, "NSIDC/land_mask.nc")
 
     if os.path.exists(ice_mask_save_path) and os.path.exists(land_mask_save_path) and not overwrite:
+        if verbose >= 2: print("Already found mask files. Skipping... \n\n")
         return 
     
     # find land mask

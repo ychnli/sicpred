@@ -13,7 +13,7 @@ import pandas as pd
 util.concatenate_nsidc()
 
 # remove missing data in 1987 and 1988 
-util.remove_missing_data_nsidc() 
+util.remove_missing_data_nsidc(verbose=2) 
 
 # calculate linear trend forecast. Execute in parallel for efficiency  
 months_to_calculate_linear_forecast = pd.date_range(start='1981-01-01', end='2024-06-01', freq='MS')
@@ -22,16 +22,16 @@ months_to_calculate_linear_forecast = pd.date_range(start='1981-01-01', end='202
 #     for month in months_to_calculate_linear_forecast)
 
 # concatenate linear trend forecasts
-util.concatenate_linear_trend()
+util.concatenate_linear_trend(verbose=2)
 
 # remove the expver dimension from the ERA5 data to make it easier to deal with
-util.remove_expver_from_era5()
+util.remove_expver_from_era5(verbose=2)
 
 # normalize variables and save 
-util.normalize_data()
+util.normalize_data(verbose=2)
 
 # generate ice mask for custom loss function
-util.generate_masks(overwrite=True)
+util.generate_masks(verbose=2)
 
 # generate data pairs
 util.prep_prediction_samples('sea_ice_only', verbose=2)
