@@ -122,6 +122,7 @@ def normalize_data(overwrite=False, verbose=1, vars_to_normalize="all"):
             da = ds[config.era5_variables_dict[var_name]["short_name"]]
 
         print("calculating means and stdev...", end=" ")
+        # calculate the normalization statistics over the training set only 
         time_subset = config.TRAIN_MONTHS.intersection(da.time)
         monthly_means = da.sel(time=time_subset).groupby("time.month").mean("time")
         monthly_stdevs = da.sel(time=time_subset).groupby("time.month").std("time")
@@ -136,6 +137,7 @@ def normalize_data(overwrite=False, verbose=1, vars_to_normalize="all"):
             var_name,
             output_dtypes=[da.dtype]
         )
+
         if var_name != "siconc":
             ds_name = config.era5_variables_dict[var_name]["short_name"] 
         else: 
@@ -151,7 +153,33 @@ def normalize_data(overwrite=False, verbose=1, vars_to_normalize="all"):
         write_nc_file(monthly_means_ds, os.path.join(save_dir, f"{var_name}_mean.nc"), overwrite)
         write_nc_file(monthly_stdevs_ds, os.path.join(save_dir, f"{var_name}_stdev.nc"), overwrite)
         write_nc_file(normalized_ds, os.path.join(save_dir, f"{var_name}_norm.nc"), overwrite)
-        print("done! \n\n")
+        print("done!")
+
+    print("done! \n\n")
+
+
+def calculate_siconc_anom(overwrite=False, verbose=1):
+    print('Calculating siconc anomalies from mean without dividing by stdev')
+    save_path = os.path.join(config.DATA_DIRECTORY, "sicpred/normalized_inputs/siconc_anom.nc")
+    
+    if os.path.exists(save_path) and not overwrite:
+        if verbose >= 2: print(f"Already found {save_path}. Skipping... \n\n")
+    
+    da = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc").siconc
+
+    time_subset = config.TRAIN_MONTHS.intersection(da.time)
+    monthly_means = da.sel(time=time_subset).groupby("time.month").mean("time")
+
+    siconc_anom = xr.apply_ufunc(
+        lambda x, m: x - m,
+        da,
+        monthly_means.sel(month=da['time'].dt.month),
+        output_dtypes=[da.dtype]
+    )
+
+    siconc_anom_ds = siconc_anom.to_dataset(name="siconc")
+    write_nc_file(siconc_anom_ds, save_path, overwrite) 
+    print("done! \n\n")
 
 
 def remove_expver_from_era5(verbose=1):

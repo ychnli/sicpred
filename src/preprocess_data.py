@@ -30,6 +30,9 @@ util.remove_expver_from_era5(verbose=2)
 # normalize variables and save 
 util.normalize_data(verbose=2)
 
+# calculate sea ice anomaly (no divide by stdev)
+util.calculate_siconc_anom(verbose=2)
+
 # generate ice mask for custom loss function
 util.generate_masks(verbose=2)
 
