@@ -164,6 +164,7 @@ def calculate_siconc_anom(overwrite=False, verbose=1):
     
     if os.path.exists(save_path) and not overwrite:
         if verbose >= 2: print(f"Already found {save_path}. Skipping... \n\n")
+        return
     
     da = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc").siconc
 
@@ -307,6 +308,39 @@ def concatenate_linear_trend(overwrite=False, verbose=1):
     print("done! \n\n")
 
 
+def load_data_da_dict(input_config):
+    """
+    Loads a dict containing DataArray objects as specified by input_config (dict). 
+    See config.py for an example of the specified input configurations. 
+    """
+
+    data_da_dict = {}
+
+    for input_var, input_var_params in input_config.items():
+        if input_var == "siconc":
+            if input_var_params['anom'] and input_var_params['div_stdev']:
+                data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/sicpred/normalized_inputs/{input_var}_norm.nc").siconc
+            elif input_var_params['anom'] and not input_var_params['div_stdev']:
+                data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/sicpred/normalized_inputs/{input_var}_anom.nc").siconc
+            else: 
+                data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc").siconc
+
+        elif input_var == 'siconc_linear_forecast':
+            data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/sicpred/linear_forecasts/linear_forecast_all_years.nc").siconc
+        
+        elif input_var in ['cosine_of_init_month', 'sine_of_init_month']:
+            # These will get generated within this function 
+            continue 
+                
+        else:
+            if input_var_params['anom']:
+                data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/sicpred/normalized_inputs/{input_var}_norm.nc")[input_var_params['short_name']]
+            else:
+                data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/ERA5/{input_var}_SPS.nc")[input_var_params['short_name']]
+    
+    return data_da_dict 
+
+
 def prep_prediction_samples(input_config_name, overwrite=False, verbose=1): 
     """
     Collects the input variables and target outputs and saves to file 
@@ -344,26 +378,7 @@ def prep_prediction_samples(input_config_name, overwrite=False, verbose=1):
     land_mask = np.logical_or(land_mask_from_sst, land_mask_from_sic).data
     land_mask = land_mask[np.newaxis, :, :]
 
-    data_da_dict = {}
-
-    for input_var, input_var_params in input_config.items():
-        if input_var == 'siconc_linear_forecast':
-            if input_var_params['anom']: 
-                print("Have not calculated anomaly linear forecast. Defaulting to non-normalized values")
-            data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/sicpred/linear_forecasts/linear_forecast_all_years.nc").siconc
-        
-        elif input_var in ['cosine_of_init_month', 'sine_of_init_month']:
-            # These will get generated within this function 
-            continue 
-
-        else:
-            if input_var_params['anom']:
-                data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/sicpred/normalized_inputs/{input_var}_norm.nc")[input_var_params['short_name']]
-            else:
-                if input_var == 'siconc':
-                    data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc").siconc
-                else: 
-                    data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/ERA5/{input_var}_SPS.nc")[input_var_params['short_name']]
+    data_da_dict = load_data_da_dict(input_config)
 
     all_inputs = []
     all_outputs = []

@@ -39,4 +39,6 @@ util.generate_masks(verbose=2)
 # generate data pairs
 util.prep_prediction_samples('sea_ice_only', verbose=2)
 util.prep_prediction_samples('simple', verbose=2)
+util.prep_prediction_samples('simple_sicanom', verbose=2)
 util.prep_prediction_samples('all', verbose=2)
+util.prep_prediction_samples('all_sicanom', verbose=2)

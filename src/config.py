@@ -127,6 +127,55 @@ input_config_simple = {
     }
 }
 
+input_config_simple_sicanom = {
+    'siconc': {
+        'plevel': None, 'short_name': 'siconc', 'include': True,
+        'anom': True, 'div_stdev': False, 'land_mask': True, 'lag': 12
+    },
+    'siconc_linear_forecast': {
+        'plevel': None, 'short_name': 'siconc', 'include': False,
+        'anom': False, 'land_mask': True, 'lag': None
+    },
+    '10m_u_component_of_wind': {
+        'plevel': None, 'short_name': 'u10', 'include': False,
+        'anom': True, 'land_mask': False, 'lag': 1
+    }, 
+    '10m_v_component_of_wind': {
+        'plevel': None, 'short_name': 'v10', 'include': False,
+        'anom': True, 'land_mask': False, 'lag': 1
+    }, 
+    '2m_temperature': {
+        'plevel': None, 'short_name': 't2m', 'include': False,
+        'anom': True, 'land_mask': False, 'lag': 3
+    }, 
+    'mean_sea_level_pressure': {
+        'plevel': None, 'short_name': 'msl', 'include': False,
+        'anom': True, 'land_mask': False, 'lag': 3
+    }, 
+    'sea_surface_temperature': {
+        'plevel': None, 'short_name': 'sst', 'include': True,
+        'anom': True, 'land_mask': True, 'lag': 3
+    }, 
+    'surface_net_solar_radiation': {
+        'plevel': None, 'short_name': 'ssr', 'include': False,
+        'anom': True, 'land_mask': False, 'lag': 3
+    }, 
+    'surface_net_thermal_radiation': {
+        'plevel': None, 'short_name': 'str', 'include': False,
+        'anom': True, 'land_mask': False, 'lag': 3
+    }, 
+    'geopotential': {
+        'plevel': '500', 'short_name': 'z', 'include': False,
+        'anom': True, 'land_mask': False, 'lag': 3
+    },
+    'cosine_of_init_month': {
+        'include': True, 'land_mask': False
+    },
+    'sine_of_init_month': {
+        'include': True,'land_mask': False
+    }
+}
+
 input_config_all = {
     'siconc': {
         'plevel': None, 'short_name': 'siconc', 'include': True,
@@ -176,8 +225,60 @@ input_config_all = {
     }
 }
 
+input_config_all_sicanom = {
+    'siconc': {
+        'plevel': None, 'short_name': 'siconc', 'include': True,
+        'anom': True, 'div_stdev': False, 'land_mask': True, 'lag': 12
+    },
+    'siconc_linear_forecast': {
+        'plevel': None, 'short_name': 'siconc', 'include': False,
+        'anom': False, 'land_mask': True, 'lag': None
+    },
+    '10m_u_component_of_wind': {
+        'plevel': None, 'short_name': 'u10', 'include': True,
+        'anom': True, 'land_mask': False, 'lag': 1
+    }, 
+    '10m_v_component_of_wind': {
+        'plevel': None, 'short_name': 'v10', 'include': True,
+        'anom': True, 'land_mask': False, 'lag': 1
+    }, 
+    '2m_temperature': {
+        'plevel': None, 'short_name': 't2m', 'include': True,
+        'anom': True, 'land_mask': False, 'lag': 3
+    }, 
+    'mean_sea_level_pressure': {
+        'plevel': None, 'short_name': 'msl', 'include': True,
+        'anom': True, 'land_mask': False, 'lag': 3
+    }, 
+    'sea_surface_temperature': {
+        'plevel': None, 'short_name': 'sst', 'include': True,
+        'anom': True, 'land_mask': True, 'lag': 3
+    }, 
+    'surface_net_solar_radiation': {
+        'plevel': None, 'short_name': 'ssr', 'include': True,
+        'anom': True, 'land_mask': False, 'lag': 3
+    }, 
+    'surface_net_thermal_radiation': {
+        'plevel': None, 'short_name': 'str', 'include': True,
+        'anom': True, 'land_mask': False, 'lag': 3
+    }, 
+    'geopotential': {
+        'plevel': '500', 'short_name': 'z', 'include': True,
+        'anom': True, 'land_mask': False, 'lag': 3
+    },
+    'cosine_of_init_month': {
+        'include': True, 'land_mask': False
+    },
+    'sine_of_init_month': {
+        'include': True,'land_mask': False
+    }
+}
+
+
 input_configs = {
     'sea_ice_only': input_config_siconly,
     'simple': input_config_simple,
-    'all': input_config_all
+    'simple_sicanom': input_config_all_sicanom,
+    'all': input_config_all,
+    'all_sicanom': input_config_all_sicanom
 }
