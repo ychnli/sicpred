@@ -11,8 +11,8 @@ import pickle
 import os
 import pandas as pd
 import h5py
-import util
-import config
+from src import util
+from src import config
 
 # Check if CUDA is available
 cuda_available = torch.cuda.is_available()

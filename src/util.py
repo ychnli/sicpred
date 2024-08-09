@@ -2,7 +2,7 @@ import xarray as xr
 import numpy as np
 import pandas as pd
 from time import time
-import config
+from src import config
 import os
 import pickle
 import torch
@@ -317,6 +317,9 @@ def load_inputs_data_da_dict(input_config):
     data_da_dict = {}
 
     for input_var, input_var_params in input_config.items():
+        if not input_var_params["include"]: 
+            continue
+
         if input_var == "siconc":
             if input_var_params['anom'] and input_var_params['div_stdev']:
                 data_da_dict[input_var] = xr.open_dataset(f"{config.DATA_DIRECTORY}/sicpred/normalized_inputs/{input_var}_norm.nc").siconc

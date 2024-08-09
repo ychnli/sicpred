@@ -1,9 +1,9 @@
 import xarray as xr
 import numpy as np
 import os
-import config
-import util
-from models import linear_trend
+from src import config
+from src import util
+from src.models import linear_trend
 #from joblib import Parallel, delayed
 import time
 import pandas as pd

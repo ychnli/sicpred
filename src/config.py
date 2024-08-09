@@ -280,7 +280,7 @@ input_config_all_sicanom = {
 input_configs = {
     'sea_ice_only': input_config_siconly,
     'simple': input_config_simple,
-    'simple_sicanom': input_config_all_sicanom,
+    'simple_sicanom': input_config_simple_sicanom,
     'all': input_config_all,
     'all_sicanom': input_config_all_sicanom
 }

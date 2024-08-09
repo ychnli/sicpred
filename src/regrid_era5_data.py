@@ -5,7 +5,7 @@ Regrids variables to the NSIDC SPS (South Polar Stereographic) grid.
 import xarray as xr
 import xesmf as xe 
 import config 
-import util
+from src import util
 import argparse
 import os
 
