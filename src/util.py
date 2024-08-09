@@ -396,7 +396,7 @@ def save_inputs_file(input_config_name, input_config, inputs_save_path, start_pr
 
 
 
-def save_targets_file(target_config, targets_save_path, start_prediction_months, verbose=1):
+def save_targets_file(input_config, target_config, targets_save_path, start_prediction_months, verbose=1):
     # Retrieve land mask 
     land_mask = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/land_mask.nc").mask.values
     land_mask = land_mask[np.newaxis, :, :]
@@ -469,7 +469,7 @@ def prep_prediction_samples(input_config_name, target_config_name, overwrite=Fal
     if os.path.exists(targets_save_path) and not overwrite:
         print(f"Already found saved targets for {target_config_name}")
     else: 
-        save_targets_file(target_config, targets_save_path, start_prediction_months, verbose)
+        save_targets_file(input_config, target_config, targets_save_path, start_prediction_months, verbose)
         
     print("done! \n\n")
     
