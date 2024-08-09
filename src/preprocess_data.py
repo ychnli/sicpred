@@ -37,8 +37,8 @@ util.calculate_siconc_anom(verbose=2)
 util.generate_masks(verbose=2)
 
 # generate data pairs
-util.prep_prediction_samples('sea_ice_only', verbose=2)
-util.prep_prediction_samples('simple', verbose=2)
-util.prep_prediction_samples('simple_sicanom', verbose=2)
-util.prep_prediction_samples('all', verbose=2)
-util.prep_prediction_samples('all_sicanom', verbose=2)
+util.prep_prediction_samples('sea_ice_only', 'regression', verbose=2)
+util.prep_prediction_samples('simple', 'regression', verbose=2)
+util.prep_prediction_samples('simple_sicanom', 'anom_regression', verbose=2)
+util.prep_prediction_samples('all', 'regression', verbose=2)
+util.prep_prediction_samples('all_sicanom', 'anom_regression', verbose=2)

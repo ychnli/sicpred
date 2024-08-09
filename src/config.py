@@ -27,7 +27,9 @@ TEST_MONTHS = pd.date_range(start='2019-01-01', end='2024-06-01', freq='MS')
 # how many months to predict into the future
 max_month_lead_time = 6 
 
-# Different configuration settings for input variables
+######################################################################
+# Input configurations 
+######################################################################
 
 input_config_siconly = {
     'siconc': {
@@ -281,4 +283,23 @@ input_configs = {
     'simple_sicanom': input_config_all_sicanom,
     'all': input_config_all,
     'all_sicanom': input_config_all_sicanom
+}
+
+######################################################################
+# Target configurations 
+######################################################################
+
+target_config_regression = {
+    'predict_siconc_anom': False,
+    'mode': 'regression'
+}
+
+target_config_anom_regression = {
+    'predict_siconc_anom': True,
+    'mode': 'regression'
+}
+
+target_configs = {
+    'regression': target_config_regression,
+    'anom_regression': target_config_anom_regression,
 }

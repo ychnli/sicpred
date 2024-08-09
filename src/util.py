@@ -308,7 +308,7 @@ def concatenate_linear_trend(overwrite=False, verbose=1):
     print("done! \n\n")
 
 
-def load_data_da_dict(input_config):
+def load_inputs_data_da_dict(input_config):
     """
     Loads a dict containing DataArray objects as specified by input_config (dict). 
     See config.py for an example of the specified input configurations. 
@@ -341,50 +341,16 @@ def load_data_da_dict(input_config):
     return data_da_dict 
 
 
-def prep_prediction_samples(input_config_name, overwrite=False, verbose=1): 
-    """
-    Collects the input variables and target outputs and saves to file 
-    """
-    
-    save_directory = os.path.join(config.DATA_DIRECTORY, "sicpred/data_pairs_npy")
-    os.makedirs(save_directory, exist_ok=True)
-
-    inputs_save_path = os.path.join(save_directory, f"inputs_{input_config_name}.h5")
-    outputs_save_path = os.path.join(save_directory, f"targets.h5")
-
-    if os.path.exists(inputs_save_path) and os.path.exists(outputs_save_path) and not overwrite:
-        print(f"Already found saved {inputs_save_path} and {outputs_save_path}. Skipping...")
-        return
-    
-    # Get input data config
-    if input_config_name in config.input_configs.keys():
-        print(f"Prepping and saving data pairs for input config {input_config_name}")
-        input_config = config.input_configs[input_config_name]
-    else:
-        raise NameError(f"Input config not found in {config.input_configs.keys()}")
-    
-    # Note missing data for 1987 Dec and 1988 Jan. So remove those from the prediction months
-    first_range = pd.date_range('1981-01', pd.Timestamp('1987-12') - pd.DateOffset(months=config.max_month_lead_time+1), freq='MS')
-    second_range = pd.date_range(pd.Timestamp('1988-01') + pd.DateOffset(months=input_config['siconc']['lag']+1), '2024-01', freq='MS')
-    start_prediction_months = first_range.append(second_range)
-
-    # Define land mask using both SST and sea ice 
-    sst = xr.open_dataset(f"{config.DATA_DIRECTORY}/ERA5/sea_surface_temperature_SPS.nc").sst
-    land_mask_from_sst = np.isnan(sst.isel(time=0)).values
-
-    nsidc_sic = xr.open_dataset(f'{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc')
-    land_mask_from_sic = np.logical_or(nsidc_sic.siconc.isel(time=0) == 2.53, nsidc_sic.siconc.isel(time=0) == 2.54)
-
-    land_mask = np.logical_or(land_mask_from_sst, land_mask_from_sic).data
+def save_inputs_file(input_config_name, input_config, inputs_save_path, start_prediction_months, verbose=1):
+    # Retrieve land mask 
+    land_mask = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/land_mask.nc").mask.values
     land_mask = land_mask[np.newaxis, :, :]
 
-    data_da_dict = load_data_da_dict(input_config)
-
+    data_da_dict = load_inputs_data_da_dict(input_config)
+    
     all_inputs = []
-    all_outputs = []
-
     for start_prediction_month in start_prediction_months:
-        if verbose >= 2: print(f"Concatenating inputs and target for init month {start_prediction_month}")
+        if verbose >= 2: print(f"Concatenating inputs for init month {start_prediction_month}")
         prediction_target_months = pd.date_range(start_prediction_month, \
             start_prediction_month + pd.DateOffset(months=config.max_month_lead_time-1), freq="MS")
         
@@ -418,26 +384,93 @@ def prep_prediction_samples(input_config_name, overwrite=False, verbose=1):
             input_list.append(input_data_npy)
         
         input_all_vars_npy = np.concatenate(input_list, axis=0)
-        target_npy = data_da_dict["siconc"].sel(time=prediction_target_months).data
+
+        # add a new axis at the beginning for n_samples
+        input_all_vars_npy = input_all_vars_npy[np.newaxis,:,:,:]
+        all_inputs.append(input_all_vars_npy)
+
+    all_inputs = np.concatenate(all_inputs, axis=0)
+
+    print(f"Saving to {inputs_save_path}")
+    write_hdf5_file(all_inputs, inputs_save_path, f"inputs_{input_config_name}")
+
+
+
+def save_targets_file(target_config, targets_save_path, start_prediction_months, verbose=1):
+    # Retrieve land mask 
+    land_mask = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/land_mask.nc").mask.values
+    land_mask = land_mask[np.newaxis, :, :]
+
+    # Retrieve targets (ground truth) dataarray 
+    if not target_config["predict_siconc_anom"]:
+        target_da = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc").siconc
+    else:
+        if input_config["siconc"]["div_stdev"]:
+            target_da = xr.open_dataset(f"{config.DATA_DIRECTORY}/sicpred/normalized_inputs/siconc_norm.nc").siconc 
+        else:
+            target_da = xr.open_dataset(f"{config.DATA_DIRECTORY}/sicpred/normalized_inputs/siconc_anom.nc").siconc
+    
+    all_targets = []
+
+    for start_prediction_month in start_prediction_months:
+        if verbose >= 2: print(f"Concatenating targets for init month {start_prediction_month}")
+        prediction_target_months = pd.date_range(start_prediction_month, \
+            start_prediction_month + pd.DateOffset(months=config.max_month_lead_time-1), freq="MS")
+    
+        target_npy = target_da.sel(time=prediction_target_months).data
         land_mask_broadcast = np.repeat(land_mask, config.max_month_lead_time, axis=0)
         target_npy[land_mask_broadcast] = 0
 
         # add a new axis at the beginning for n_samples
-        input_all_vars_npy = input_all_vars_npy[np.newaxis,:,:,:]
         target_npy = target_npy[np.newaxis,:,:,:]
+        all_targets.append(target_npy)
 
-        all_inputs.append(input_all_vars_npy)
-        all_outputs.append(target_npy)
+    all_targets = np.concatenate(all_targets, axis=0)
 
-    all_inputs = np.concatenate(all_inputs, axis=0)
-    all_outputs = np.concatenate(all_outputs, axis=0)
+    print(f"Saving to {targets_save_path}")
+    write_hdf5_file(all_targets, targets_save_path, f"targets_sea_ice_only")
 
-    print(f"Saving to .h5 files to {save_directory}...", end='')
-    write_hdf5_file(all_inputs, inputs_save_path, f"inputs_{input_config_name}")
 
-    if not os.path.exists(outputs_save_path) or overwrite:
-        write_hdf5_file(all_outputs, outputs_save_path, f"targets_sea_ice_only")
 
+def prep_prediction_samples(input_config_name, target_config_name, overwrite=False, verbose=1): 
+    """
+    Collects the input variables and target (ground truth) outputs and saves to HDF5 file 
+    """
+    
+    save_directory = os.path.join(config.DATA_DIRECTORY, "sicpred/data_pairs_npy")
+    os.makedirs(save_directory, exist_ok=True)
+
+    # Get input and targets data configs
+    if input_config_name in config.input_configs.keys():
+        print(f"Prepping and saving data pairs for input config {input_config_name}")
+        input_config = config.input_configs[input_config_name]
+    else:
+        raise KeyError(f"Input config not found in {config.input_configs.keys()}")
+
+    if target_config_name in config.target_configs.keys():
+        target_config = config.target_configs[target_config_name]
+    else:
+        raise KeyError(f"Target config not found in {config.target_configs.keys()}")
+
+    inputs_save_path = os.path.join(save_directory, f"inputs_{input_config_name}.h5")
+    targets_save_path = os.path.join(save_directory, f"targets_{target_config_name}.h5")
+    
+    # Create a list of the starting month of each 6-month prediction target
+    # Note missing data for 1987 Dec and 1988 Jan. So remove those from the prediction months
+    first_range = pd.date_range('1981-01', pd.Timestamp('1987-12') - pd.DateOffset(months=config.max_month_lead_time+1), freq='MS')
+    second_range = pd.date_range(pd.Timestamp('1988-01') + pd.DateOffset(months=input_config['siconc']['lag']+1), '2024-01', freq='MS')
+    start_prediction_months = first_range.append(second_range)
+
+    if os.path.exists(inputs_save_path) and not overwrite:
+        print(f"Already found saved inputs for {input_config_name}")
+    else: 
+        save_inputs_file(input_config_name, input_config, inputs_save_path, start_prediction_months, verbose)
+    
+    if os.path.exists(targets_save_path) and not overwrite:
+        print(f"Already found saved targets for {target_config_name}")
+    else: 
+        save_targets_file(target_config, targets_save_path, start_prediction_months, verbose)
+        
     print("done! \n\n")
     
 
