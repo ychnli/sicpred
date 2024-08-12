@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from netCDF4 import Dataset
 import h5py
 import matplotlib.pyplot as plt
 
@@ -598,19 +598,23 @@ def linear_regress_array(x_arr, y_arr, axis=0, mask=None):
 ##########################################################################################
 
 
-class SeaIceDataset(Dataset):
+class SeaIceDataset(torch.utils.data.Dataset):
     def __init__(self, data_directory, configuration, split_array, start_prediction_months, \
-                split_type='train', target_shape=(336, 320)):
+                split_type='train', target_shape=(336, 320), mode="regression", class_splits=None):
         self.data_directory = data_directory
         self.configuration = configuration
         self.split_array = split_array
         self.start_prediction_months = start_prediction_months
         self.split_type = split_type
         self.target_shape = target_shape
+        self.class_splits = class_splits
+        self.mode = mode
 
         # Open the HDF5 files
-        self.inputs_file = h5py.File(f"{config.DATA_DIRECTORY}/sicpred/data_pairs_npy/inputs_{configuration}.h5", 'r')
-        self.targets_file = h5py.File(f"{config.DATA_DIRECTORY}/sicpred/data_pairs_npy/targets.h5", 'r')
+        self.inputs_file = h5py.File(f"{data_directory}/inputs_{configuration}.h5", 'r')
+
+        if "sicanom" in configuration: targets_configuration = "anom_regression" 
+        self.targets_file = h5py.File(f"{data_directory}/targets_{targets_configuration}.h5", 'r')
         
         self.inputs = self.inputs_file[f"inputs_{configuration}"]
         self.targets = self.targets_file['targets_sea_ice_only']
@@ -634,6 +638,35 @@ class SeaIceDataset(Dataset):
         pad_x = self.target_shape[1] - self.n_x
         input_data = np.pad(input_data, ((0, 0), (pad_y//2, pad_y//2), (pad_x//2, pad_x//2)), mode='constant', constant_values=0)
         target_data = np.pad(target_data, ((0, 0), (pad_y//2, pad_y//2), (pad_x//2, pad_x//2)), mode='constant', constant_values=0)
+
+        # If we are doing classification, then discretise the target data
+        if self.mode == "classification":
+            if self.class_splits is None:
+                raise ValueError("need to specify a monotonically increasing list class_splits denoting class boundaries")
+
+            # check if class_split is monotonically increasing
+            if len(self.class_splits) > 1 and np.any(np.diff(self.class_splits) < 0): 
+                raise ValueError("class_splits needs to be monotonically increasing")
+
+            bounds = [] # bounds for classes
+            for i,class_split in enumerate(self.class_splits): 
+                if i == 0: 
+                    bounds.append([0, class_split])
+                if i == len(self.class_splits) - 1: 
+                    bounds.append([class_split, 1])
+                else: 
+                    bounds.append([class_split, self.class_splits[i+1]])
+            
+            target_classes_data = np.zeros_like(target_data) 
+            target_classes_data = target_classes_data[np.newaxis,:,:,:]
+            target_classes_data = np.repeat(target_classes_data, len(bounds), axis=0)
+            for i,bound in enumerate(bounds): 
+                if i == len(bounds) - 1: 
+                    target_classes_data[i,:,:,:] = np.logical_and(target_data >= bound[0], target_data <= bound[1]).astype(int)
+                else:
+                    target_classes_data[i,:,:,:] = np.logical_and(target_data >= bound[0], target_data < bound[1]).astype(int)
+            
+            target_data = target_classes_data 
 
         input_tensor = torch.tensor(input_data, dtype=torch.float32)
         target_tensor = torch.tensor(target_data, dtype=torch.float32)
@@ -703,9 +736,9 @@ def train_model(model, device, model_hyperparam_configs, optimizer, criterion,
     val_dataset = SeaIceDataset(data_pairs_directory, configuration, split_array, start_prediction_months, split_type='val', target_shape=(336, 320))
     test_dataset = SeaIceDataset(data_pairs_directory, configuration, split_array, start_prediction_months, split_type='test', target_shape=(336, 320))
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=1)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=1)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=1)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=1)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=1)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=1)
 
     train_losses = []
     val_losses = []
