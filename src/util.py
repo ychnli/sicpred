@@ -344,7 +344,9 @@ def load_inputs_data_da_dict(input_config):
     return data_da_dict 
 
 
-def save_inputs_file(input_config_name, input_config, inputs_save_path, start_prediction_months, verbose=1):
+def save_inputs_file(input_config_name, input_config, inputs_save_path, start_prediction_months, 
+                    clip_PDF_tails=True, clip_constant=6, verbose=1):
+
     # Retrieve land mask 
     land_mask = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/land_mask.nc").mask.values
     land_mask = land_mask[np.newaxis, :, :]
@@ -378,6 +380,12 @@ def save_inputs_file(input_config_name, input_config, inputs_save_path, start_pr
                 prediction_input_months = pd.date_range(start_prediction_month - pd.DateOffset(months=input_var_params["lag"]), \
                     start_prediction_month - pd.DateOffset(months=1), freq="MS")
                 input_data_npy = data_da_dict[input_var].sel(time=prediction_input_months).data
+
+                # to prevent super out-of-distribution SST and ssr data points
+                if input_var in ["sea_surface_temperature", "surface_net_solar_radiation"]:
+                    if clip_PDF_tails: 
+                        input_data_npy = np.where(input_data_npy > clip_constant, input_data_npy, clip_constant)
+                        input_data_npy = np.where(input_data_npy < -clip_constant, input_data_npy, -clip_constant)
             
             # Apply land mask. Land values go to 0 
             if input_var_params['land_mask']:
