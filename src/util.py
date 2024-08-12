@@ -649,28 +649,6 @@ class SeaIceDataset(Dataset):
         self.targets_file.close()
 
 
-class MaskedMSELoss(nn.Module):
-    def __init__(self, use_weights, zero_class_weight=None):
-        super(MaskedMSELoss, self).__init__()
-        self.ice_mask = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/monthly_ice_mask.nc").mask
-        self.use_weights = use_weights
-        self.zero_class_weight = zero_class_weight
-
-    def forward(self, outputs, targets, target_months):
-        n_active_cells = 0
-
-        for target_months_subset in target_months:
-            n_active_cells += self.ice_mask.sel(month=target_months_subset.cpu()).sum().values
-        
-        # Punish predictions of sea ice in ice free zones 
-        if self.use_weights:
-            weights = torch.where(targets == 0, self.zero_class_weight, 1)
-            loss = torch.sum(((targets - outputs) ** 2) * weights) / n_active_cells
-        else:
-            loss = torch.sum((targets - outputs) ** 2) / n_active_cells
-
-        return loss
-
 
 def print_split_stats(split_array):
     ntrain = sum(split_array == 'train')
