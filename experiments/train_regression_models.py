@@ -67,10 +67,10 @@ for i,b in enumerate(batch_sizes):
 
                 if arch == "UNetRes3":
                     model = models.UNetRes3(in_channels=in_channels_config[model_hyperparam_configs["input_config"]], \
-                                            out_channels=6, device=device, n_channels_factor=1, filter_size=3).to(device)
+                                            out_channels=6, mode="regression", device=device, n_channels_factor=1, filter_size=3).to(device)
                 elif arch == "UNetRes4":
                     model = models.UNetRes4(in_channels=in_channels_config[model_hyperparam_configs["input_config"]], \
-                                            out_channels=6, device=device, n_channels_factor=1, filter_size=3).to(device)
+                                            out_channels=6, mode="regression", device=device, n_channels_factor=1, filter_size=3).to(device)
 
                 criterion = util.MaskedMSELoss(use_weights=model_hyperparam_configs["use_zeros_weight"], \
                                             zero_class_weight=model_hyperparam_configs["zeros_weight"])

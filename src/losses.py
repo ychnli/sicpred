@@ -33,6 +33,16 @@ class MaskedMSELoss(nn.Module):
 
 
 class CategoricalFocalLoss(nn.Module):
+    """
+    A modification of cross-entropy loss with an extra factor of (1 - P)^gamma 
+    to up-weight egregiously incorrect classifications (e.g., low predicted P
+    for the correct class). 
+
+    Params:
+        device:         "cuda" or "cpu" 
+        gamma:          strength of focal scaling parameter (default=2)
+    """
+
     def __init__(self, device, gamma=2., weight_by_month=True): 
         super(CategoricalFocalLoss, self).__init__()
         self.ice_mask = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/monthly_ice_mask.nc").mask
@@ -49,6 +59,13 @@ class CategoricalFocalLoss(nn.Module):
         return monthly_max_ice_cells / np.min(monthly_max_ice_cells)
     
     def forward(self, outputs, targets, target_months):
+        """
+        Params: 
+            outputs:        represent a probability distribution over n classes
+            targets:        one-hot encoded vector of the same shape as outputs of the correct class
+            target_months:  corresponding 6-month period of prediction 
+        """
+        
         # clip 0 values to prevent inf during log step 
         outputs = torch.where(outputs == 0, outputs + self.epsilon, outputs) 
         
