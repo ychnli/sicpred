@@ -537,7 +537,8 @@ def calculate_climatological_siconc_over_train(overwrite=False, verbose=1):
         return 
 
     siconc = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc").siconc
-    siconc_clim = siconc.sel(time=config.TRAIN_MONTHS).groupby('time.dt.month').mean('time')
+    train_months = config.TRAIN_MONTHS.intersection(siconc.time) # Need to do this because of missing data
+    siconc_clim = siconc.sel(time=train_months).groupby('time.month').mean('time')
 
     siconc_clim_ds = siconc_clim.to_dataset(name="siconc")
     write_nc_file(siconc_clim_ds, f"{config.DATA_DIRECTORY}/NSIDC/siconc_clim.nc", overwrite)
