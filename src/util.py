@@ -62,6 +62,12 @@ def save_dict_to_pickle(data_dict, save_path):
     with open(save_path, 'wb') as file:
         pickle.dump(data_dict, file)
 
+def load_pickle(load_path):
+    with open(load_path, 'rb') as file:
+        data = pickle.load(file)
+    return data
+
+
 ##########################################################################################
 # Data preprocessing 
 ##########################################################################################
@@ -636,7 +642,11 @@ class SeaIceDataset(torch.utils.data.Dataset):
         # Open the HDF5 files
         self.inputs_file = h5py.File(f"{data_directory}/inputs_{configuration}.h5", 'r')
 
-        if "sicanom" in configuration: targets_configuration = "anom_regression" 
+        if "sicanom" in configuration: 
+            targets_configuration = "anom_regression" 
+        else: 
+            targets_configuration = "regression"
+
         self.targets_file = h5py.File(f"{data_directory}/targets_{targets_configuration}.h5", 'r')
         
         self.inputs = self.inputs_file[f"inputs_{configuration}"]
