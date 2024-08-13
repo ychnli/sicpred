@@ -38,38 +38,35 @@ model_hyperparam_configs = {
     "notes": ""
 }
 
+device = util.get_device()
 
-cuda_available = torch.cuda.is_available()
-print(f"CUDA available: {cuda_available}")
+# train 5 instances of each model 
+for input_config in ["all_sicanom", "all"]:
+    for seed in range(5):
+        # set hyperparams
+        model_hyperparam_configs["name"] = f"UNetRes3_{input_config}_{seed}"
+        model_hyperparam_configs["input_config"] = input_config
+        model_hyperparam_configs["seed"] = seed
+        util.set_initialization_seed(model_hyperparam_configs["seed"], verbose=2)
+        in_channels = 34 if input_config == "all_sicanom" else 40 
 
-# If available, print the name of the GPU
-if cuda_available:
-    print(f"Device name: {torch.cuda.get_device_name(0)}")
-    print(f"Device count: {torch.cuda.device_count()}")
+        # get constant hyperparams
+        lr = model_hyperparam_configs["lr"]
+        b = model_hyperparam_configs["batch_size"]
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Training {model_hyperparam_configs['name']} with lr={lr} and input_config={input_config} and batch_size={b}")
 
+        model = models.UNetRes3(in_channels=in_channels, out_channels=6, mode="regression", device=device, \
+                                n_channels_factor=1, filter_size=3, predict_anomalies=True).to(device)
 
-# Set the seed for random weights initialization 
-torch.cuda.manual_seed(model_hyperparam_configs["seed"])
-torch.cuda.manual_seed_all(model_hyperparam_configs["seed"])
+        criterion = losses.MaskedMSELoss(use_weights=model_hyperparam_configs["use_zeros_weight"], \
+                                    zero_class_weight=model_hyperparam_configs["zeros_weight"])
 
-lr = model_hyperparam_configs["lr"]
-input_config = model_hyperparam_configs["input_config"]
-b = model_hyperparam_configs["batch_size"]
+        if model_hyperparam_configs["optimizer"] == "adam":
+            optimizer = torch.optim.Adam(model.parameters(), lr=model_hyperparam_configs["lr"])
+        else: 
+            raise ValueError("Haven't yet configured training procedure for other optimizers")
 
-print(f"Training {model_hyperparam_configs['name']} with lr={lr} and input_config={input_config} and batch_size={b}")
-
-model = models.UNetRes3(in_channels=34, out_channels=6, mode="regression", device=device, \
-                        n_channels_factor=1, filter_size=3, predict_anomalies=True).to(device)
-
-criterion = losses.MaskedMSELoss(use_weights=model_hyperparam_configs["use_zeros_weight"], \
-                            zero_class_weight=model_hyperparam_configs["zeros_weight"])
-
-if model_hyperparam_configs["optimizer"] == "adam":
-    optimizer = torch.optim.Adam(model.parameters(), lr=model_hyperparam_configs["lr"])
-else: 
-    raise ValueError("Haven't yet configured training procedure for other optimizers")
-
-util.train_model(model, device, model_hyperparam_configs, optimizer, criterion, \
-                plot_training_curve=True, save_val_predictions=True)
+        util.train_model(model, device, model_hyperparam_configs, optimizer, criterion, \
+                        plot_training_curve=True, save_val_predictions=True, \
+                        save_dir=f"{config.DATA_DIRECTORY}/sicpred/models/experiments/anom_vs_abs")

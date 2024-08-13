@@ -95,29 +95,28 @@ def linear_trend(target_month, save_path, linear_years="all", verbose=1):
     return prediction
 
 
-def calculate_climatological_siconc_over_train():
-    siconc = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc").siconc
-    siconc_clim = siconc.sel(time=config.TRAIN_MONTHS).groupby('time.dt.month').mean('time')
-    # TODO 
-
-
 def anomaly_persistence(start_prediction_month, predict_anomalies=True):
     """
     The anomaly persistence baseline model 
-
     """
+
     siconc_anom = xr.open_dataset(f"{DATA_DIRECTORY}/sicpred/normalized_inputs/siconc_anom.nc").siconc
+    siconc_clim = xr.open_dataset(f"{DATA_DIRECTORY}/NSIDC/siconc_clim.nc").siconc
     land_mask = xr.open_dataset(f"{DATA_DIRECTORY}/NSIDC/land_mask.nc").mask
     siconc_anom *= ~land_mask
 
     anomaly_to_persist = siconc_anom.sel(time=start_prediction_month - pd.DateOffset(months=1)) 
-    
-    if predict_anomalies:
-        prediction = np.repeat(anomaly_to_persist.values[np.newaxis,:,:], 6, axis=0)
-    else:
-        # add it to the climatology 
-        # this is TODO
+    months_to_predict_clim = siconc_clim.sel(time=pd.date_range(start_prediction_month, \
+        start_prediction_month+pd.DateOffset(months=5), freq='MS'))
 
+    prediction = months_to_predict_clim + anomaly_to_persist 
+
+    # clip unphysical values outside of [0, 1] 
+    prediction = prediction.where(prediction > 1, 1)
+    prediction = prediction.where(prediction < 0, 0)
+
+    if predict_anomalies:
+        prediction = prediction - months_to_predict_clim
 
     return prediction
 

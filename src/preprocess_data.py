@@ -33,6 +33,9 @@ util.normalize_data(verbose=2)
 # calculate sea ice anomaly (no divide by stdev)
 util.calculate_siconc_anom(verbose=2)
 
+# calculate sea ice climatology over training dataset
+util.calculate_climatological_siconc_over_train()
+
 # generate ice mask for custom loss function
 util.generate_masks(verbose=2)
 

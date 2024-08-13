@@ -529,6 +529,20 @@ def generate_masks(overwrite=False, verbose=1):
     print(f"done! \n\n")
 
 
+def calculate_climatological_siconc_over_train(overwrite=False, verbose=1):
+    if verbose >= 1: print("Calculating sea ice conc climatology...")
+
+    if os.path.exists(f"{config.DATA_DIRECTORY}/NSIDC/siconc_clim.nc") and not overwrite:
+        if verbose >= 2: print("Already found climatology file. Skipping... \n\n")
+        return 
+
+    siconc = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc").siconc
+    siconc_clim = siconc.sel(time=config.TRAIN_MONTHS).groupby('time.dt.month').mean('time')
+
+    siconc_clim_ds = siconc_clim.to_dataset(name="siconc")
+    write_nc_file(siconc_clim_ds, f"{config.DATA_DIRECTORY}/NSIDC/siconc_clim.nc", overwrite)
+    print("done! \n\n")
+
 ##########################################################################################
 # Statistical methods 
 ##########################################################################################
@@ -722,6 +736,24 @@ def generate_split_array(verbose=1):
     if verbose == 2: print_split_stats(split_array)
     
     return split_array, start_prediction_months
+
+
+def get_device(verbose=1):
+    cuda_available = torch.cuda.is_available()
+    if verbose >= 1: print(f"CUDA available: {cuda_available}")
+
+    # If available, print the name of the GPU
+    if cuda_available and verbose >= 1:
+        print(f"Device name: {torch.cuda.get_device_name(0)}")
+        print(f"Device count: {torch.cuda.device_count()}")
+
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def set_initialization_seed(seed, verbose=1):
+    if verbose >= 2: print(f"Setting random init seed to {seed}")
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 def train_model(model, device, model_hyperparam_configs, optimizer, criterion,
