@@ -1,3 +1,8 @@
+"""
+Experiment: comparing predicting absolute sea ice vs. predicting the anomalies
+"""
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -18,7 +23,7 @@ from src import config
 from src import losses
 
 model_hyperparam_configs = {
-    "name": "UNetRes3_allinputs_pred_anom_test_clip",
+    "name": "",
     "architecture": "UNetRes3",
     "input_config": "all_sicanom", 
     "batch_size": 4,

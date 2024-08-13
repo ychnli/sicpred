@@ -725,7 +725,8 @@ def generate_split_array(verbose=1):
 
 
 def train_model(model, device, model_hyperparam_configs, optimizer, criterion,
-                plot_training_curve=True, verbose=1, save_val_predictions=True):
+                plot_training_curve=True, verbose=1, save_val_predictions=True, 
+                save_dir=f"{config.DATA_DIRECTORY}/sicpred/models"):
 
     # read in some metadata
     configuration = model_hyperparam_configs["input_config"]
@@ -800,8 +801,8 @@ def train_model(model, device, model_hyperparam_configs, optimizer, criterion,
                 best_val_loss = val_loss
                 patience_counter = 0
                 # Save the best model weights
-                os.makedirs(f"{config.DATA_DIRECTORY}/sicpred/models", exist_ok=True)
-                torch.save(model.state_dict(), f"{config.DATA_DIRECTORY}/sicpred/models/{model_name}.pth")
+                os.makedirs(save_dir, exist_ok=True)
+                torch.save(model.state_dict(), os.path.join(save_dir, f"{model_name}.pth"))
             else:
                 patience_counter += 1
                 if patience_counter >= patience:

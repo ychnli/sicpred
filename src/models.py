@@ -251,10 +251,10 @@ class UNetRes4(UNetRes3):
     """
 
     def __init__(self, in_channels, out_channels, mode, device, spatial_shape=(336, 320), 
-                n_channels_factor=1, filter_size=3, T=1.0, n_classes=2):
+                n_channels_factor=1, filter_size=3, T=1.0, n_classes=2, predict_anomalies=False):
 
         super(UNetRes4, self).__init__(in_channels, out_channels, mode, device, spatial_shape, \
-                                        n_channels_factor, filter_size, T, n_classes)
+                                        n_channels_factor, filter_size, T, n_classes, predict_anomalies)
 
         self.encoder4 = self.conv_block(int(256 * n_channels_factor), int(512 * n_channels_factor), filter_size)
         self.bottleneck = self.conv_block(int(512 * n_channels_factor), int(1024 * n_channels_factor), filter_size)
@@ -291,9 +291,28 @@ class UNetRes4(UNetRes3):
         dec1 = self.decoder1_conv_2(dec1)
         dec1 = self.decoder1_conv_2(dec1)
 
-        output = torch.sigmoid(self.final_conv(dec1))
-        
-        # Apply the land mask
-        output = output * self.land_mask
-        
+        if self.mode == "regression":
+            if self.predict_anomalies:
+                # Mapping to (-1, 1)
+                output = torch.tanh(self.final_conv_reg(dec1))
+            else: 
+                # Mapping to (0, 1)
+                output = torch.sigmoid(self.final_conv_reg(dec1))
+            
+            # Apply the land mask
+            output = output * self.land_mask
+
+        elif self.mode == "classification": 
+            final_logits = torch.stack([self.final_convs_class[i](dec1) for i in range(out_channels)], dim=2)
+            final_logits = final_logits.view(-1, 6, 3, spatial_shape[0], spatial_shape[1])
+            final_logits = final_logits / self.T  # Apply temperature scaling
+            output = F.softmax(final_logits, dim=2)  
+
+            land_mask = self.land_mask.unsqueeze(2)  # Add a class dimension
+            output = output * land_mask
+
+            # for the no sea ice class, the land should be automatically assigned probability 1  
+            output[:, :, 0, :, :] += (~land_mask[:, :, 0, :, :])
+
         return output
+
