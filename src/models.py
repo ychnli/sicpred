@@ -95,8 +95,32 @@ def linear_trend(target_month, save_path, linear_years="all", verbose=1):
     return prediction
 
 
-def anomaly_persistence():
-    return None
+def calculate_climatological_siconc_over_train():
+    siconc = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc").siconc
+    siconc_clim = siconc.sel(time=config.TRAIN_MONTHS).groupby('time.dt.month').mean('time')
+    # TODO 
+
+
+def anomaly_persistence(start_prediction_month, predict_anomalies=True):
+    """
+    The anomaly persistence baseline model 
+
+    """
+    siconc_anom = xr.open_dataset(f"{DATA_DIRECTORY}/sicpred/normalized_inputs/siconc_anom.nc").siconc
+    land_mask = xr.open_dataset(f"{DATA_DIRECTORY}/NSIDC/land_mask.nc").mask
+    siconc_anom *= ~land_mask
+
+    anomaly_to_persist = siconc_anom.sel(time=start_prediction_month - pd.DateOffset(months=1)) 
+    
+    if predict_anomalies:
+        prediction = np.repeat(anomaly_to_persist.values[np.newaxis,:,:], 6, axis=0)
+    else:
+        # add it to the climatology 
+        # this is TODO
+
+
+    return prediction
+
 
 class UNetRes3(nn.Module):
     """

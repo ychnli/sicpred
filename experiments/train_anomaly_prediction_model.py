@@ -18,7 +18,7 @@ from src import config
 from src import losses
 
 model_hyperparam_configs = {
-    "name": "UNetRes3_allinputs_pred_anom_test",
+    "name": "UNetRes3_allinputs_pred_anom_test_clip",
     "architecture": "UNetRes3",
     "input_config": "all_sicanom", 
     "batch_size": 4,
