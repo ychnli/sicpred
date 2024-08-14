@@ -42,9 +42,10 @@ device = util.get_device()
 
 # train 5 instances of each model 
 for arch in ["UNetRes4", "UNetRes3"]:
-    for lr in [1e-5, 1e-6]:
+    for lr in [1e-4, 1e-5, 1e-6]:
         for batch_size in [1, 4]:
             # set hyperparams
+            if lr == 1e-4: lr_str = "1e-4"
             if lr == 1e-5: lr_str = "1e-5"
             if lr == 1e-6: lr_str = "1e-6"
             model_hyperparam_configs["name"] = f"{arch}_all_sicanom_lr={lr_str}b={batch_size}"
