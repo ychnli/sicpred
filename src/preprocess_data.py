@@ -15,6 +15,10 @@ util.concatenate_nsidc()
 # remove missing data in 1987 and 1988 
 util.remove_missing_data_nsidc(verbose=2) 
 
+# generate land and ice masks
+util.generate_masks(verbose=2)
+util.apply_land_mask_to_nsidc_siconc(verbose=2) 
+
 # calculate linear trend forecast. Execute in parallel for efficiency  
 months_to_calculate_linear_forecast = pd.date_range(start='1981-01-01', end='2024-06-01', freq='MS')
 
@@ -34,10 +38,8 @@ util.normalize_data(verbose=2)
 util.calculate_siconc_anom(verbose=2)
 
 # calculate sea ice climatology over training dataset
-util.calculate_climatological_siconc_over_train()
+util.calculate_climatological_siconc_over_train(overwrite=True)
 
-# generate ice mask for custom loss function
-util.generate_masks(verbose=2)
 
 # generate data pairs
 util.prep_prediction_samples('sea_ice_only', 'regression', verbose=2)

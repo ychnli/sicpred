@@ -95,7 +95,7 @@ def linear_trend(target_month, save_path, linear_years="all", verbose=1):
     return prediction
 
 
-def anomaly_persistence(start_prediction_month, predict_anomalies=True):
+def anomaly_persistence(start_prediction_month, predict_anomalies=False):
     """
     The anomaly persistence baseline model 
     """

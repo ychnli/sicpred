@@ -285,6 +285,25 @@ def remove_missing_data_nsidc(verbose=1):
     os.replace(temp_path, f'{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc')
 
 
+def apply_land_mask_to_nsidc_siconc(verbose=1, overwrite=False):
+    if verbose >= 1: print("Applying land mask to NSIDC sea ice data")
+
+    file_path = f'{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc'
+    nsidc_sic = xr.open_dataset(file_path)
+
+    # This condition checks for the presence of NSIDC land flag values (2.54)
+    # in the first time step. Not a foolproof check, but fast and should work
+    needs_fixing = np.any(nsidc_sic.siconc.isel(time=0) > 2)
+
+    if not needs_fixing and not overwrite:
+        if verbose >= 2: print("Land mask has already been applied. Skipping... \n\n")
+        return 
+    
+    land_mask = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/land_mask.nc").mask.values
+    nsidc_sic_masked = nsidc_sic.siconc * ~land_mask
+    write_nc_file(nsidc_sic_masked.to_dataset(name="siconc"), file_path, overwrite) 
+    print("done! \n\n")
+
 def concatenate_linear_trend(overwrite=False, verbose=1):
     """
     Concatenates the linear trend files
