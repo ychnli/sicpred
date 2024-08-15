@@ -133,12 +133,15 @@ class UNetRes3(nn.Module):
     """
 
     def __init__(self, in_channels, out_channels, mode, device, spatial_shape=(336, 320), 
-                n_channels_factor=1, filter_size=3, T=1.0, n_classes=2, predict_anomalies=False):
+                n_channels_factor=1, filter_size=3, T=1.0, n_classes=2, predict_anomalies=False,
+                clip_near_zero_anomalies=True, epsilon=0.01):
 
         super(UNetRes3, self).__init__()
         self.mode = mode 
         self.T = T # temperature scaling factor 
         self.predict_anomalies = predict_anomalies
+        self.clip_near_zero_anomalies = True
+        self.epsilon = epsilon 
 
         self.encoder1 = self.conv_block(in_channels, int(64 * n_channels_factor), filter_size)
         self.encoder2 = self.conv_block(int(64 * n_channels_factor), int(128 * n_channels_factor), filter_size)
@@ -218,6 +221,17 @@ class UNetRes3(nn.Module):
             if self.predict_anomalies:
                 # Mapping to (-1, 1)
                 output = torch.tanh(self.final_conv_reg(dec1))
+
+                ##########################################################################
+                # Since getting exactly 0 after tanh requires an input of 0, this clipping
+                # can help the model when it gets "close enough" since there are a lot of
+                # zero values in the truth 
+                #
+                # By default, epsilon is set to 0.01, which is below the typical margin of
+                # error for sea ice concentration products
+                ##########################################################################
+                if self.clip_near_zero_anomalies:
+                    output = output.where(torch.abs(output) < self.epsilon, 0, output)
             else: 
                 # Mapping to (0, 1)
                 output = torch.sigmoid(self.final_conv_reg(dec1))
@@ -250,10 +264,12 @@ class UNetRes4(UNetRes3):
     """
 
     def __init__(self, in_channels, out_channels, mode, device, spatial_shape=(336, 320), 
-                n_channels_factor=1, filter_size=3, T=1.0, n_classes=2, predict_anomalies=False):
+                n_channels_factor=1, filter_size=3, T=1.0, n_classes=2, predict_anomalies=False,
+                clip_near_zero_anomalies=True, epsilon=0.01):
 
         super(UNetRes4, self).__init__(in_channels, out_channels, mode, device, spatial_shape, \
-                                        n_channels_factor, filter_size, T, n_classes, predict_anomalies)
+                                        n_channels_factor, filter_size, T, n_classes, predict_anomalies, \
+                                        clip_near_zero_anomalies, epsilon)
 
         self.encoder4 = self.conv_block(int(256 * n_channels_factor), int(512 * n_channels_factor), filter_size)
         self.bottleneck = self.conv_block(int(512 * n_channels_factor), int(1024 * n_channels_factor), filter_size)
@@ -294,6 +310,9 @@ class UNetRes4(UNetRes3):
             if self.predict_anomalies:
                 # Mapping to (-1, 1)
                 output = torch.tanh(self.final_conv_reg(dec1))
+
+                if self.clip_near_zero_anomalies:
+                    output = output.where(torch.abs(output) < self.epsilon, 0, output)
             else: 
                 # Mapping to (0, 1)
                 output = torch.sigmoid(self.final_conv_reg(dec1))
