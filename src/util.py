@@ -409,8 +409,8 @@ def save_inputs_file(input_config_name, input_config, inputs_save_path, start_pr
                 # to prevent super out-of-distribution SST and ssr data points
                 if input_var in ["sea_surface_temperature", "surface_net_solar_radiation"]:
                     if clip_PDF_tails: 
-                        input_data_npy = np.where(input_data_npy > clip_constant, input_data_npy, clip_constant)
-                        input_data_npy = np.where(input_data_npy < -clip_constant, input_data_npy, -clip_constant)
+                        input_data_npy = np.where(input_data_npy > clip_constant, clip_constant, input_data_npy)
+                        input_data_npy = np.where(input_data_npy < -clip_constant, -clip_constant, input_data_npy)
             
             # Apply land mask. Land values go to 0 
             if input_var_params['land_mask']:
