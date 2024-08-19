@@ -82,6 +82,9 @@ variables_dict = {
     }, 
     'geopotential': {
         'plevel': '500'
+    },
+    'u_component_of_wind': {
+        'plevel': '10'
     }
 }
 
