@@ -112,12 +112,15 @@ def normalize_data(overwrite=False, verbose=1, vars_to_normalize="all"):
             continue
 
         print(f"Normalizing {var_name}...", end=" ")
+        if var_name in config.era5_variables_dict:
+            plevel = config.era5_variables_dict[var_name]["plevel"]
+
         if var_name == "siconc":
             ds = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/seaice_conc_monthly_all.nc")
             da = ds[var_name]
 
-        elif var_name == "geopotential":
-            ds = xr.open_dataset(f"{config.DATA_DIRECTORY}/ERA5/{var_name}_500hPa_SPS.nc")
+        elif plevel != None:
+            ds = xr.open_dataset(f"{config.DATA_DIRECTORY}/ERA5/{var_name}_{plevel}hPa_SPS.nc")
             da = ds[config.era5_variables_dict[var_name]["short_name"]]
 
         else:
@@ -192,8 +195,9 @@ def calculate_siconc_anom(overwrite=False, verbose=1):
 def remove_expver_from_era5(verbose=1):
     if verbose >= 1: print("Removing expver dimension from ERA5 variables")
     for var_name in config.era5_variables_dict.keys():
-        if var_name == "geopotential":
-            file_path = os.path.join(config.DATA_DIRECTORY, "ERA5/geopotential_500hPa_SPS.nc")
+        plevel = config.era5_variables_dict[var_name]["plevel"]
+        if plevel != None:
+            file_path = os.path.join(config.DATA_DIRECTORY, f"ERA5/{var_name}_{plevel}hPa_SPS.nc")
             ds = xr.open_dataset(file_path)
         else:
             file_path = os.path.join(config.DATA_DIRECTORY, f"ERA5/{var_name}_SPS.nc")

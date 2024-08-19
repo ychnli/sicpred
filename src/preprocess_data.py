@@ -42,8 +42,4 @@ util.calculate_climatological_siconc_over_train(overwrite=True)
 
 
 # generate data pairs
-util.prep_prediction_samples('sea_ice_only', 'regression', verbose=2)
-util.prep_prediction_samples('simple', 'regression', verbose=2)
-util.prep_prediction_samples('simple_sicanom', 'anom_regression', verbose=2)
-util.prep_prediction_samples('all', 'regression', verbose=2)
 util.prep_prediction_samples('all_sicanom', 'anom_regression', verbose=2)

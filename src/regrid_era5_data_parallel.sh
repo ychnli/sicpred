@@ -8,3 +8,4 @@ python3 regrid_era5_data.py --var surface_net_solar_radiation
 python3 regrid_era5_data.py --var surface_net_thermal_radiation
 python3 regrid_era5_data.py --var sea_ice_cover
 python3 regrid_era5_data.py --var geopotential
+python3 regrid_era5_data.py --var u_component_of_wind

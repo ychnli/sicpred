@@ -5,9 +5,11 @@ Regrids variables to the NSIDC SPS (South Polar Stereographic) grid.
 import xarray as xr
 import xesmf as xe 
 import config 
-from src import util
 import argparse
 import os
+
+from src import util
+from src import config
 
 # Get the variable name to regrid 
 parser = argparse.ArgumentParser()
@@ -24,16 +26,17 @@ Params:
     data_path (str) path where the variable 
 """
 def regrid_var(var_name, output_grid=config.SPS_GRID, grid_name='SPS', overwrite=False):
-    if var_name == 'geopotential':
-        path = f'{config.DATA_DIRECTORY}/ERA5/{var_name}_500hPa.nc'
+    plevel = config.era5_variables_dict[var_name]["plevel"]
+    if plevel != None:
+        path = f'{config.DATA_DIRECTORY}/ERA5/{var_name}_{plevel}hPa.nc'
     else: 
         path = f'{config.DATA_DIRECTORY}/ERA5/{var_name}.nc'
 
     if not os.path.exists(path):
         raise FileNotFoundError(f"{file_path} does not exist")
     
-    if var_name == 'geopotential':
-        save_path = f'{config.DATA_DIRECTORY}/ERA5/{var_name}_500hPa_{grid_name}.nc'
+    if plevel != None:
+        save_path = f'{config.DATA_DIRECTORY}/ERA5/{var_name}_{plevel}hPa_{grid_name}.nc'
     else: 
         save_path = f'{config.DATA_DIRECTORY}/ERA5/{var_name}_{grid_name}.nc'
 

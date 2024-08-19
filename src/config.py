@@ -15,7 +15,8 @@ era5_variables_dict = {
     'surface_net_solar_radiation': {'plevel': None, 'short_name': 'ssr'}, 
     'surface_net_thermal_radiation': {'plevel': None, 'short_name': 'str'}, 
     'sea_ice_cover': {'plevel': None}, 
-    'geopotential': {'plevel': '500', 'short_name': 'z'}
+    'geopotential': {'plevel': '500', 'short_name': 'z'},
+    'u_component_of_wind': {'plevel': '10', 'short_name': 'u'}
 }
 
 
