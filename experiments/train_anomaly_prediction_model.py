@@ -18,6 +18,7 @@ import h5py
 
 # module imports
 from src import models
+from src import models_util
 from src import util
 from src import config
 from src import losses
@@ -38,7 +39,7 @@ model_hyperparam_configs = {
     "notes": ""
 }
 
-device = util.get_device()
+device = models_util.get_device()
 
 # train 5 instances of each model 
 for input_config in ["all_sicanom", "all"]:
@@ -47,7 +48,7 @@ for input_config in ["all_sicanom", "all"]:
         model_hyperparam_configs["name"] = f"UNetRes3_{input_config}_{seed}"
         model_hyperparam_configs["input_config"] = input_config
         model_hyperparam_configs["seed"] = seed
-        util.set_initialization_seed(model_hyperparam_configs["seed"], verbose=2)
+        models_util.set_initialization_seed(model_hyperparam_configs["seed"], verbose=2)
         in_channels = 34 if input_config == "all_sicanom" else 40 
 
         # get constant hyperparams
@@ -67,6 +68,6 @@ for input_config in ["all_sicanom", "all"]:
         else: 
             raise ValueError("Haven't yet configured training procedure for other optimizers")
 
-        util.train_model(model, device, model_hyperparam_configs, optimizer, criterion, \
+        models_util.train_model(model, device, model_hyperparam_configs, optimizer, criterion, \
                         plot_training_curve=True, save_val_predictions=True, \
                         save_dir=f"{config.DATA_DIRECTORY}/sicpred/models/experiments/anom_vs_abs")

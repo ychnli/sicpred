@@ -18,6 +18,7 @@ import h5py
 
 # module imports
 from src import models
+from src import models_util
 from src import util
 from src import config
 from src import losses
@@ -38,7 +39,7 @@ model_hyperparam_configs = {
     "notes": ""
 }
 
-device = util.get_device()
+device = models_util.get_device()
 
 # train 5 instances of each model 
 for arch in ["UNetRes4", "UNetRes3"]:
@@ -53,7 +54,7 @@ for arch in ["UNetRes4", "UNetRes3"]:
             model_hyperparam_configs["batch_size"] = batch_size
             model_hyperparam_configs["lr"] = lr
 
-            util.set_initialization_seed(model_hyperparam_configs["seed"], verbose=2)
+            models_util.set_initialization_seed(model_hyperparam_configs["seed"], verbose=2)
             in_channels = 34 
 
             # get constant hyperparams
@@ -70,6 +71,6 @@ for arch in ["UNetRes4", "UNetRes3"]:
             else: 
                 raise ValueError("Haven't yet configured training procedure for other optimizers")
 
-            util.train_model(model, device, model_hyperparam_configs, optimizer, criterion, \
+            models_util.train_model(model, device, model_hyperparam_configs, optimizer, criterion, \
                             plot_training_curve=True, save_val_predictions=True, \
                             save_dir=f"{config.DATA_DIRECTORY}/sicpred/models/anom_pred")

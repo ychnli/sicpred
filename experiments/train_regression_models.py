@@ -11,7 +11,10 @@ import pickle
 import os
 import pandas as pd
 import h5py
+
 from src import util
+from src import models_util
+from src import losses
 from src import config
 
 # Check if CUDA is available
@@ -72,7 +75,7 @@ for i,b in enumerate(batch_sizes):
                     model = models.UNetRes4(in_channels=in_channels_config[model_hyperparam_configs["input_config"]], \
                                             out_channels=6, mode="regression", device=device, n_channels_factor=1, filter_size=3).to(device)
 
-                criterion = util.MaskedMSELoss(use_weights=model_hyperparam_configs["use_zeros_weight"], \
+                criterion = losses.MaskedMSELoss(use_weights=model_hyperparam_configs["use_zeros_weight"], \
                                             zero_class_weight=model_hyperparam_configs["zeros_weight"])
 
                 if model_hyperparam_configs["optimizer"] == "adam":
@@ -80,4 +83,4 @@ for i,b in enumerate(batch_sizes):
                 else: 
                     raise ValueError("Haven't yet configured training procedure for other optimizers")
 
-                util.train_model(model, device, model_hyperparam_configs, optimizer, criterion, plot_training_curve=True)
+                models_util.train_model(model, device, model_hyperparam_configs, optimizer, criterion, plot_training_curve=True)
