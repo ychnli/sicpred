@@ -40,6 +40,5 @@ util.calculate_siconc_anom(verbose=2)
 # calculate sea ice climatology over training dataset
 util.calculate_climatological_siconc_over_train(overwrite=True)
 
-
 # generate data pairs
-util.prep_prediction_samples('all_sicanom', 'anom_regression', verbose=2)
+util.prep_prediction_samples('all_sicanom', 'anom_regression', verbose=2, overwrite=True)

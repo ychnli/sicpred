@@ -8,7 +8,7 @@ import config
 import argparse
 import os
 
-from src import util
+from src.util import write_nc_file
 from src import config
 
 # Get the variable name to regrid 
@@ -68,10 +68,7 @@ def regrid_var(var_name, output_grid=config.SPS_GRID, grid_name='SPS', overwrite
     ds_regridded = regridder(ds_to_regrid)
     print(f'Finished regridding {var_name}! saving...', end='')
     
-    if os.path.exists(save_path): 
-        util.overwrite_nc_file(ds_regridded, save_path)
-    else: 
-        ds_regridded.to_netcdf(save_path)
+    util.write_nc_file(ds_regridded, save_path, overwrite)
 
     print('Done!')
 

@@ -73,6 +73,10 @@ input_config_siconly = {
         'plevel': '500', 'short_name': 'z', 'include': False,
         'anom': True, 'land_mask': False, 'lag': 3
     },
+    'u_component_of_wind': {
+        'plevel': '10', 'short_name': 'u', 'include': False,
+        'anom': True, 'land_mask': False, 'lag': 3
+    },
     'cosine_of_init_month': {
         'include': True, 'land_mask': False
     },
@@ -120,6 +124,10 @@ input_config_simple = {
     }, 
     'geopotential': {
         'plevel': '500', 'short_name': 'z', 'include': False,
+        'anom': True, 'land_mask': False, 'lag': 3
+    },
+    'u_component_of_wind': {
+        'plevel': '10', 'short_name': 'u', 'include': False,
         'anom': True, 'land_mask': False, 'lag': 3
     },
     'cosine_of_init_month': {
@@ -171,6 +179,10 @@ input_config_simple_sicanom = {
         'plevel': '500', 'short_name': 'z', 'include': False,
         'anom': True, 'land_mask': False, 'lag': 3
     },
+    'u_component_of_wind': {
+        'plevel': '10', 'short_name': 'u', 'include': False,
+        'anom': True, 'land_mask': False, 'lag': 3
+    },
     'cosine_of_init_month': {
         'include': True, 'land_mask': False
     },
@@ -220,6 +232,10 @@ input_config_all = {
         'plevel': '500', 'short_name': 'z', 'include': True,
         'anom': True, 'land_mask': False, 'lag': 3
     },
+    'u_component_of_wind': {
+        'plevel': '10', 'short_name': 'u', 'include': True,
+        'anom': True, 'land_mask': False, 'lag': 3
+    },
     'cosine_of_init_month': {
         'include': True, 'land_mask': False
     },
@@ -267,6 +283,10 @@ input_config_all_sicanom = {
     }, 
     'geopotential': {
         'plevel': '500', 'short_name': 'z', 'include': True,
+        'anom': True, 'land_mask': False, 'lag': 3
+    },
+    'u_component_of_wind': {
+        'plevel': '10', 'short_name': 'u', 'include': True,
         'anom': True, 'land_mask': False, 'lag': 3
     },
     'cosine_of_init_month': {
