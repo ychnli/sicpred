@@ -1,9 +1,20 @@
+import xarray as xr
+import numpy as np
+import pandas as pd
+from time import time
+from src import config
+import os
+import pickle
+from netCDF4 import Dataset
+import h5py
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
 from src import util
+from src import config
 
 ##########################################################################################
 # Model utils
@@ -262,8 +273,10 @@ def train_model(model, device, model_hyperparam_configs, optimizer, criterion,
                 inputs, targets = inputs.to(device), targets.to(device)
                 outputs = model(inputs)
                 val_predictions.append(outputs.cpu().numpy())
-        os.makedirs(f"{config.DATA_DIRECTORY}/sicpred/val_predictions", exist_ok=True)
-        np.save(f"{config.DATA_DIRECTORY}/sicpred/val_predictions/{model_name}_val_predictions.npy", np.concatenate(val_predictions, axis=0))
+
+        val_pred_save_path = os.path.join(save_dir, "val_predictions")
+        os.makedirs(val_pred_save_path, exist_ok=True)
+        np.save(f"{val_pred_save_path}/{model_name}_val_predictions.npy", np.concatenate(val_predictions, axis=0))
 
     # Save the trained model
     if verbose >= 1: print("Saving model weights...", end='')
@@ -277,7 +290,7 @@ def train_model(model, device, model_hyperparam_configs, optimizer, criterion,
         model_hyperparam_configs["final_epoch"] = num_epochs
         
     os.makedirs(f"{config.DATA_DIRECTORY}/sicpred/val_predictions", exist_ok=True)
-    save_dict_to_pickle(model_hyperparam_configs, f"{config.DATA_DIRECTORY}/sicpred/models/{model_name}.pkl")
+    util.save_dict_to_pickle(model_hyperparam_configs, f"{config.DATA_DIRECTORY}/sicpred/models/{model_name}.pkl")
     torch.save(model.state_dict(), f"{config.DATA_DIRECTORY}/sicpred/models/{model_name}.pth")
     if verbose >= 1: print("done! \n\n")
 
