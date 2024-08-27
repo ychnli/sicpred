@@ -231,7 +231,7 @@ class UNetRes3(nn.Module):
                 # error for sea ice concentration products
                 ##########################################################################
                 if self.clip_near_zero_anomalies:
-                    output = output.where(torch.abs(output) < self.epsilon, 0, output)
+                    output = output.where(output.abs() > self.epsilon, 0)
             else: 
                 # Mapping to (0, 1)
                 output = torch.sigmoid(self.final_conv_reg(dec1))
