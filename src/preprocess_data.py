@@ -41,4 +41,5 @@ util.calculate_siconc_anom(verbose=2)
 util.calculate_climatological_siconc_over_train(overwrite=True)
 
 # generate data pairs
-util.prep_prediction_samples('all_sicanom', 'anom_regression', verbose=2, overwrite=True)
+util.prep_prediction_samples('all_sicanom', 'anom_regression', verbose=2, overwrite=False)
+util.prep_prediction_samples('all_sicanom_modified', 'anom_regression', verbose=2, overwrite=False)
