@@ -49,7 +49,12 @@ class SeaIceDataset(torch.utils.data.Dataset):
         self.n_samples, self.n_channels, self.n_y, self.n_x = self.inputs.shape
         
         # Get indices for the specified split type
-        self.indices = np.where(self.split_array == split_type)[0]
+        if isinstance(split_type, str): 
+            self.indices = np.where(split_array == split_type)[0]
+        elif isinstance(split_type, list):
+            self.indices = np.where(np.isin(split_array, split_type))[0]
+        else:
+            raise TypeError("split_type needs to be one of str or list")
 
     def __len__(self):
         return len(self.indices)
@@ -296,3 +301,33 @@ def train_model(model, device, model_hyperparam_configs, optimizer, criterion,
 
     return train_losses, val_losses
 
+
+def evaluate_model(model, model_hyperparam_configs, device):
+    """
+    Evaluates the model on val and test datasets and returns the predictions and 
+    targets as numpy arrays. Note that the model should have weights loaded in 
+    already and should be transferred to cuda if using GPU 
+    """
+
+    configuration = model_hyperparam_configs["input_config"]
+    batch_size = model_hyperparam_configs["batch_size"]
+
+    data_pairs_directory = os.path.join(config.DATA_DIRECTORY, 'sicpred/data_pairs_npy')
+    split_array, start_prediction_months = generate_split_array()
+
+    valtest_dataset = SeaIceDataset(data_pairs_directory, configuration, split_array, start_prediction_months, split_type=['val','test'], target_shape=(336, 320))
+    valtest_loader = torch.utils.data.DataLoader(valtest_dataset, batch_size=batch_size, shuffle=False, num_workers=1)
+   
+    model.eval()
+    predictions = []
+    targets_list = []
+    with torch.no_grad():
+        for inputs, targets, _ in valtest_loader:
+            inputs = inputs.to(device)
+            predictions.append(model(inputs))
+            targets_list.append(targets)
+            
+    predictions = torch.cat(predictions, dim=0).cpu().numpy()
+    targets = torch.cat(targets_list, dim=0).cpu().numpy()
+
+    return predictions, targets
