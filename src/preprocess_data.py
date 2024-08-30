@@ -3,8 +3,6 @@ import numpy as np
 import os
 from src import config
 from src import util
-from src.models import linear_trend
-#from joblib import Parallel, delayed
 import time
 import pandas as pd
 
@@ -19,11 +17,8 @@ util.remove_missing_data_nsidc(verbose=2)
 util.generate_masks(verbose=2)
 util.apply_land_mask_to_nsidc_siconc(verbose=2) 
 
-# calculate linear trend forecast. Execute in parallel for efficiency  
-months_to_calculate_linear_forecast = pd.date_range(start='1981-01-01', end='2024-06-01', freq='MS')
-
-# Parallel(n_jobs=-1)(delayed(linear_trend)(month, f"{config.DATA_DIRECTORY}/sicpred/linear_forecasts/") \
-#     for month in months_to_calculate_linear_forecast)
+# calculate linear trend forecast. Execute in parallel for efficiency
+util.compute_linear_forecast()
 
 # concatenate linear trend forecasts
 util.concatenate_linear_trend(verbose=2)

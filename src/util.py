@@ -9,6 +9,7 @@ from netCDF4 import Dataset
 import h5py
 import matplotlib.pyplot as plt
 
+from src.models import linear_trend
 
 ##########################################################################################
 # File I/O wrappers
@@ -319,6 +320,24 @@ def apply_land_mask_to_nsidc_siconc(verbose=1):
     nsidc_sic_masked = nsidc_sic.siconc * ~land_mask
     write_nc_file(nsidc_sic_masked.to_dataset(name="siconc"), file_path, overwrite=True) 
     print("done! \n\n")
+
+
+def compute_linear_forecast(overwrite=False, parallelize=True, verbose=1):
+    months_to_calculate_linear_forecast = pd.date_range(start='1981-01-01', end='2024-06-01', freq='MS')
+
+    if not overwrite and os.path.exists(f"{config.DATA_DIRECTORY}/sicpred/linear_forecasts/linear_forecast_all_years.nc"):
+        print("Already found computed linear trend. Skipping... \n\n")
+        return 
+
+    if parallelize:
+        from joblib import Parallel, delayed
+
+        Parallel(n_jobs=-1)(delayed(linear_trend)(month, f"{config.DATA_DIRECTORY}/sicpred/linear_forecasts/") \
+            for month in months_to_calculate_linear_forecast)
+    else:
+        for month in months_to_calculate_linear_forecast:
+            linear_trend(month, f"{config.DATA_DIRECTORY}/sicpred/linear_forecasts/")
+
 
 def concatenate_linear_trend(overwrite=False, verbose=1):
     """
