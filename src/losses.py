@@ -10,11 +10,18 @@ import torch.nn.functional as F
 from src import config
 
 class MaskedMSELoss(nn.Module):
-    def __init__(self, use_weights, zero_class_weight=None):
+    def __init__(self, device, use_weights=False, use_area_weighting=True, zero_class_weight=None, scale_factor=1):
         super(MaskedMSELoss, self).__init__()
         self.ice_mask = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/monthly_ice_mask.nc").mask
+        self.latitude_weights = np.cos(np.deg2rad(config.SPS_GRID.latitude.values))
         self.use_weights = use_weights
+        self.use_area_weighting = use_area_weighting
         self.zero_class_weight = zero_class_weight
+        self.scale_factor = scale_factor
+
+        # pad the latitude weights and convert it to tensor
+        self.latitude_weights = np.pad(self.latitude_weights, ((2,2), (2,2)), mode='constant', constant_values=0)
+        self.latitude_weights = torch.tensor(self.latitude_weights).to(device)
 
     def forward(self, outputs, targets, target_months):
         n_active_cells = 0
@@ -23,13 +30,20 @@ class MaskedMSELoss(nn.Module):
             n_active_cells += self.ice_mask.sel(month=target_months_subset.cpu()).sum().values
         
         # Punish predictions of sea ice in ice free zones 
+        diff = targets - outputs 
+        if self.use_area_weighting: 
+            # ignore padded regions
+            # maybe this code is better to be generalized for arbitrary padding but I don't think
+            # the padding will be much different 
+            diff = diff * self.latitude_weights
+
         if self.use_weights:
             weights = torch.where(targets == 0, self.zero_class_weight, 1)
-            loss = torch.sum(((targets - outputs) ** 2) * weights) / n_active_cells
+            loss = torch.sum(((diff) ** 2) * weights) / n_active_cells
         else:
-            loss = torch.sum((targets - outputs) ** 2) / n_active_cells
-
-        return loss
+            loss = torch.sum((diff) ** 2) / n_active_cells
+        
+        return loss * self.scale_factor
 
 
 class CategoricalFocalLoss(nn.Module):
