@@ -1,5 +1,8 @@
 """
-Experiment: Train an ensemble of 15 sea ice anomaly prediction networks
+Experiment: Old ensemble trained on inputs without sst, ssr, and u10 seems to 
+perform significantly better for long lead times, not just predicting 
+fading anomaly persistence. This is an attempt to recreate that, since unfortunately 
+the inputs data file had been previously overwritten. 
 """
 
 import numpy as np
@@ -25,7 +28,7 @@ from src import losses
 model_hyperparam_configs = {
     "name": "",
     "architecture": "UNetRes3",
-    "input_config": "all_sicanom", 
+    "input_config": "all_sicanom_modified", 
     "batch_size": 4,
     "lr": 1e-4,
     "optimizer": "adam",
@@ -39,22 +42,22 @@ model_hyperparam_configs = {
 }
 
 device = models_util.get_device()
-input_config = "all_sicanom"
+input_config = "all_sicanom_modified"
 
 overwrite_model_training = False
 
 if __name__ == "__main__":
     # training loop 
-    for seed in range(0, 15, 1):
+    for seed in range(0, 5, 1):
         # set hyperparams
         model_hyperparam_configs["name"] = f"UNetRes3_{input_config}_{seed}"
         model_hyperparam_configs["input_config"] = input_config
         model_hyperparam_configs["seed"] = seed
         models_util.set_initialization_seed(model_hyperparam_configs["seed"], verbose=2)
-        in_channels = 37
+        in_channels = 28
 
         # check if model has already been trained 
-        model_val_pred_path = f"{config.DATA_DIRECTORY}/sicpred/models/experiments/anom_ensemble_2/val_predictions/UNetRes3_{input_config}_{seed}_val_predictions.npy"
+        model_val_pred_path = f"{config.DATA_DIRECTORY}/sicpred/models/experiments/recover_old_ensemble/val_predictions/UNetRes3_{input_config}_{seed}_val_predictions.npy"
         if not overwrite_model_training and os.path.exists(model_val_pred_path): 
             print(f"Already found trained UNetRes3 for {input_config} and seed {seed}, skipping...")
             continue 
@@ -80,7 +83,7 @@ if __name__ == "__main__":
 
         models_util.train_model(model, device, model_hyperparam_configs, optimizer, criterion, \
                         plot_training_curve=True, save_val_predictions=True, \
-                        save_dir=f"{config.DATA_DIRECTORY}/sicpred/models/experiments/anom_ensemble_2")
+                        save_dir=f"{config.DATA_DIRECTORY}/sicpred/models/experiments/recover_old_ensemble")
 
     print("\n\n")
 
@@ -91,7 +94,7 @@ if __name__ == "__main__":
         model = models.UNetRes3(in_channels=in_channels, out_channels=6, mode="regression", device=device, \
                                 n_channels_factor=1, filter_size=3, predict_anomalies=True)
 
-        model_weights_save_path = f"{config.DATA_DIRECTORY}/sicpred/models/experiments/anom_ensemble_2/UNetRes3_{input_config}_{seed}.pth"
+        model_weights_save_path = f"{config.DATA_DIRECTORY}/sicpred/models/experiments/recover_old_ensemble/UNetRes3_{input_config}_{seed}.pth"
 
         model.load_state_dict(torch.load(model_weights_save_path, weights_only=True))
         model.to(device)
@@ -119,5 +122,5 @@ if __name__ == "__main__":
     )
     print("saving...", end="")
     
-    util.write_nc_file(valtest_pred_ds, f"{config.DATA_DIRECTORY}/sicpred/models/experiments/anom_ensemble_2/valtest_pred.nc", overwrite=True)
+    util.write_nc_file(valtest_pred_ds, f"{config.DATA_DIRECTORY}/sicpred/models/experiments/recover_old_ensemble/valtest_pred.nc", overwrite=True)
     print("done! \n\n")
