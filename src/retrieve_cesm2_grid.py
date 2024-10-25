@@ -1,3 +1,8 @@
+"""
+Downloads CESM2 ocean grid and saves it to DATA_DIRECTORY/cesm_lens/grids/ocean_grid.nc
+"""
+
+
 #!/usr/bin/env python
 from __future__ import print_function
 import requests
