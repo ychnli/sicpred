@@ -11,7 +11,7 @@ from src import config
 #################### configure these! ####################
 download_settings = {
     # variables to download 
-    "vars": ["TEMP"], #["ICEFRAC", "TEMP", "FLNS", "FSNS", "PSL", "Z3", "U", "V", "hi"],
+    "vars": ["ICEFRAC"], #["ICEFRAC", "TEMP", "FLNS", "FSNS", "PSL", "Z3", "U", "V", "hi"],
 
     "chunk": "default",
     
