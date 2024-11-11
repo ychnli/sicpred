@@ -244,10 +244,50 @@ def make_save_directories(download_settings=download_settings, parent_dir="/scra
     return variable_dirs
 
 
+def check_if_downloaded(variable_dirs, download_settings=download_settings, parent_dir="/scratch/users/yucli/"):
+    """
+    Given download_settings, find all files that have already been downloaded. 
+    Return a modified download_settings only for files that have not been downloaded.
+
+    Args:
+    variable_dirs (dict): dictionary containing the paths to save the variables
+    download_settings (dict): dictionary containing the download settings
+    parent_dir (str): parent directory to save the data
+
+    Returns:
+    download_settings_updated (dict): dictionary containing the updated download settings
+    """
+    download_settings_updated = download_settings
+
+    for variable in download_settings["vars"]:
+        path_name = os.path.join(parent_dir, "cesm_data", var_args[variable]["save_name"])
+        files = os.listdir(path_name)
+        
+        # get the specific member ids that have been downloaded
+        downloaded_members = []
+        for f in files:
+            downloaded_members.append(int(f.split("_")[-1].split(".")[0]))
+
+        # remove the downloaded member ids from the download_settings
+        if download_settings["member_id"] == "all":
+            download_settings_updated["member_id"] = [i for i in range(100) if i not in downloaded_members]
+        elif type(download_settings["member_id"]) == list:
+            download_settings_updated["member_id"] = [i for i in download_settings["member_id"] if i not in downloaded_members]
+        else:
+            raise TypeError("download_settings['member_id'] needs to be a list or 'all'")
+        
+        if len(download_settings_updated["member_id"]) == 0:
+            download_settings_updated["vars"].remove(variable)
+            print(f"Variable {variable} has already been downloaded for all ensemble members. Skipping...")
+    return download_settings_updated
+    
 def main():
     variable_dirs = make_save_directories(download_settings=download_settings, parent_dir=download_settings["save_directory"])
 
     output_grid = generate_sps_grid()
+
+    # check what has already been downloaded and update download settings 
+    download_settings = check_if_downloaded(variable_dirs, download_settings=download_settings, parent_dir=download_settings["save_directory"])
 
     for variable in download_settings["vars"]:
         merged_ds = retrieve_variable_dataset(catalog=CATALOG, variable=variable)
@@ -256,12 +296,12 @@ def main():
 
         # download one ensemble member at a time 
         if download_settings["member_id"] == "all": 
-            n_members = merged_ds.member_id.size
-        elif type(download_settings["member_id"]) == list: 
-            n_members = len(download_settings["member_id"])
+            members_to_download = range(merged_ds.member_id.size)
+        elif isinstance(download_settings["member_id"], list): 
+            members_to_download = download_settings["member_id"]
         else: raise TypeError("download_settings['member_id'] needs to be a list or 'all'")
 
-        for i in range(n_members):
+        for i in members_to_download:
             subset = subset_variable_dataset(merged_ds, variable, member_id=i, chunk=download_settings["chunk"])
 
             # regrid variable 
@@ -269,6 +309,7 @@ def main():
             print("saving... ", end="")
             save_path = os.path.join(variable_dirs[variable], f"{var_args[variable]['save_name']}_member_{i}.nc")
             regridded_subset.to_netcdf(save_path)
+            regridded_subset.close()
             print("done!")            
 
 if __name__ == "__main__":
