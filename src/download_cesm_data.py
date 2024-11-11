@@ -182,40 +182,47 @@ def regrid_variable(ds_to_regrid, output_grid):
     
     return ds_regridded
 
-
-TEMP_SAVE_DIR = "/scratch/users/yucli/test/"
-
-output_grid = generate_sps_grid()
-
-for variable in download_settings["vars"]:
-    merged_ds = retrieve_variable_dataset(catalog=CATALOG, variable=variable)
-    
-    if merged_ds is None: continue
-
-    # download one ensemble member at a time 
-    if download_settings["member_id"] == "all": 
-        n_members = merged_ds.member_id.size
-    elif type(download_settings["member_id"]) == list: 
-        n_members = len(download_settings["member_id"])
-    else: raise TypeError("download_settings['member_id'] needs to be a list or 'all'")
-
-    for i in range(n_members):
-        subset = subset_variable_dataset(merged_ds, variable, member_id=i, chunk=download_settings["chunk"])
-
-        # TEST: load in subset
-        subset = subset.load()
-
-        print("loaded")
-        print(subset)
-        raise NotImplementedError()
-
-        # regrid variable 
-        regridded_subset = regrid_variable(subset, output_grid)
-        print("saving... ", end="")
-        regridded_subset.to_netcdf(os.path.join(TEMP_SAVE_DIR, f"{variable}_memberid{i}.nc"))
-        print("done!")
-
+def make_save_directories(download_settings=download_settings, parent_dir="/scratch/users/yucli/"):
+    """
+    Constructs the fire directory structure for saving files
+    """
+    for variable in download_settings["vars"]:
         
+        os.makedirs(exist_ok=True)
 
+
+def main():
+    TEMP_SAVE_DIR = "/scratch/users/yucli/test/"
+
+    output_grid = generate_sps_grid()
+
+    for variable in download_settings["vars"]:
+        merged_ds = retrieve_variable_dataset(catalog=CATALOG, variable=variable)
         
+        if merged_ds is None: continue
 
+        # download one ensemble member at a time 
+        if download_settings["member_id"] == "all": 
+            n_members = merged_ds.member_id.size
+        elif type(download_settings["member_id"]) == list: 
+            n_members = len(download_settings["member_id"])
+        else: raise TypeError("download_settings['member_id'] needs to be a list or 'all'")
+
+        for i in range(n_members):
+            subset = subset_variable_dataset(merged_ds, variable, member_id=i, chunk=download_settings["chunk"])
+
+            # TEST: load in subset
+            subset = subset.load()
+
+            print("loaded")
+            print(subset)
+            raise NotImplementedError()
+
+            # regrid variable 
+            regridded_subset = regrid_variable(subset, output_grid)
+            print("saving... ", end="")
+            regridded_subset.to_netcdf(os.path.join(TEMP_SAVE_DIR, f"{variable}_memberid{i}.nc"))
+            print("done!")            
+
+if __name__ == "__main__":
+    main()
