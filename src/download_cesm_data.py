@@ -309,6 +309,7 @@ def main():
             print("saving... ", end="")
             save_path = os.path.join(variable_dirs[variable], f"{var_args[variable]['save_name']}_member_{i}.nc")
             regridded_subset.to_netcdf(save_path)
+            regridded_subset.close()
             print("done!")            
 
 if __name__ == "__main__":
