@@ -15,21 +15,59 @@ download_settings = {
 
     "chunk": "default",
     
-    "member_id": [0], 
+    "member_id": "all", 
 
     "save_directory": "/scratch/users/yucli/"
 }
 
 var_args = {
-    "ICEFRAC":  {"p_index": None}, # saved in the atm component
-    "TEMP":     {"p_index": 0, "lat_slice": slice(0, 93)}, # note, lat_slice is index 
-    "FLNS":     {"p_index": None}, 
-    "FSNS":     {"p_index": None}, 
-    "PSL":      {"p_index": None}, 
-    "Z3":       {"p_index": 20}, 
-    "U":        {"p_index": -1}, 
-    "V":        {"p_index": -1}, # apparently, there is no V! 
-    "hi":       {"p_index": None, "lat_slice": slice(0, 93)} # for some reason thickness is in ice component, not atm
+    "ICEFRAC": {
+        "p_index": None,
+        "save_name": "icefrac",
+        "long_name": "Sea ice fraction"
+    },
+    "TEMP": {
+        "p_index": 0,
+        "lat_slice": slice(0, 93),
+        "save_name": "temp",
+        "long_name": "Sea surface temperature"
+    },
+    "FLNS": {
+        "p_index": None,
+        "save_name": "lw_flux",
+        "long_name": "Net longwave flux at surface"
+    },
+    "FSNS": {
+        "p_index": None,
+        "save_name": "sw_flux",
+        "long_name": "Net shortwave flux at surface"
+    },
+    "PSL": {
+        "p_index": None,
+        "save_name": "psl",
+        "long_name": "Sea level pressure"
+    },
+    "Z3": {
+        "p_index": 20,
+        "save_name": "geopotential",
+        "long_name": "Geopotential height at 500 hPa"
+    },
+    "U": {
+        "p_index": -1,
+        "save_name": "ua",
+        "long_name": "Surface zonal wind"
+    },
+    "V": {
+        "p_index": -1,
+        "save_name": "va",
+        "long_name": "Surface meridional wind"
+    },
+    "hi": {
+        "p_index": None,
+        "lat_slice": slice(0, 93),
+        "save_name": "icethick",
+        "long_name": "Sea ice thickness"
+    }
 }
 
 #################### constants ####################
@@ -129,7 +167,10 @@ def subset_variable_dataset(merged_ds, variable, member_id, chunk="default", var
         subset = subset.assign_coords(lat=([lat_index_name, lon_index_name], lat), lon=([lat_index_name, lon_index_name], lon))
     
     print("done!")
-        
+    
+    # turn subset into a dataset and rename it 
+    subset = subset.to_dataset(name=var_args[variable]["save_name"])
+
     return subset
 
 def generate_sps_grid(grid_size=80, lat_boundary=-52.5):
@@ -185,14 +226,26 @@ def regrid_variable(ds_to_regrid, output_grid):
 def make_save_directories(download_settings=download_settings, parent_dir="/scratch/users/yucli/"):
     """
     Constructs the fire directory structure for saving files
+
+    Args:
+    download_settings (dict): dictionary containing the download settings
+    parent_dir (str): parent directory to save the data
+
+    Returns:
+    variable_dirs (dict): dictionary containing the paths to save the variables
     """
+    variable_dirs = {}
+
     for variable in download_settings["vars"]:
-        
-        os.makedirs(exist_ok=True)
+        path_name = os.path.join(parent_dir, "cesm_data", var_args[variable]["save_name"])
+        os.makedirs(path_name, exist_ok=True)
+        variable_dirs[variable] = path_name
+
+    return variable_dirs
 
 
 def main():
-    TEMP_SAVE_DIR = "/scratch/users/yucli/test/"
+    variable_dirs = make_save_directories(download_settings=download_settings, parent_dir=download_settings["save_directory"])
 
     output_grid = generate_sps_grid()
 
@@ -211,17 +264,11 @@ def main():
         for i in range(n_members):
             subset = subset_variable_dataset(merged_ds, variable, member_id=i, chunk=download_settings["chunk"])
 
-            # TEST: load in subset
-            subset = subset.load()
-
-            print("loaded")
-            print(subset)
-            raise NotImplementedError()
-
             # regrid variable 
             regridded_subset = regrid_variable(subset, output_grid)
             print("saving... ", end="")
-            regridded_subset.to_netcdf(os.path.join(TEMP_SAVE_DIR, f"{variable}_memberid{i}.nc"))
+            save_path = os.path.join(variable_dirs[variable], f"{var_args[variable]['save_name']}_member_{i}.nc")
+            regridded_subset.to_netcdf(save_path)
             print("done!")            
 
 if __name__ == "__main__":
