@@ -11,11 +11,19 @@ from src import config
 #################### configure these! ####################
 download_settings = {
     # variables to download 
-    "vars": ["ICEFRAC"], #["ICEFRAC", "TEMP", "FLNS", "FSNS", "PSL", "Z3", "U", "V", "hi"],
+    "vars": ["U", "hi", "Z3"], #["ICEFRAC", "TEMP", "FLNS", "FSNS", "PSL", "Z3", "U", "V", "hi"],
 
     "chunk": "default",
     
-    "member_id": "all", 
+    "member_id": {"ICEFRAC": "all", 
+                    "TEMP": "all",
+                    "FLNS": "all",
+                    "FSNS": "all",
+                    "PSL": "all",
+                    "Z3": "all",
+                    "U": "all",
+                    "V": "all",
+                    "hi": "all"},
 
     "save_directory": "/scratch/users/yucli/"
 }
@@ -127,6 +135,12 @@ def subset_variable_dataset(merged_ds, variable, member_id, chunk="default", var
     print(f"Subsetting ensemble member {member_id}... ", end="")
     
     component = var_args[variable]["component"]
+
+    # first check if member_id is valid 
+    if len(merged_ds[variable].member_id) <= member_id:
+        print(f"{variable} only has {len(merged_ds[variable].member_id)} member_ids! Skipping... ")
+        return None
+
     subset = merged_ds[variable].isel(member_id=member_id) 
     
     if chunk == "default":
@@ -204,7 +218,6 @@ def generate_sps_grid(grid_size=80, lat_boundary=-52.5):
 
 
 def regrid_variable(ds_to_regrid, output_grid):
-    print("Downloading data and regridding (this step may take a while)... ", end="")
     start_time = time.time()
     weight_file = f'{config.DATA_DIRECTORY}/cesm_lens/grids/cesm_to_sps_bilinear_regridding_weights.nc'
 
@@ -215,7 +228,7 @@ def regrid_variable(ds_to_regrid, output_grid):
         regridder = xe.Regridder(ds_to_regrid, output_grid, 'bilinear', filename=weight_file, 
                                 ignore_degenerate=True, reuse_weights=False, periodic=True)
 
-    ds_regridded = regridder(ds_to_regrid)
+    ds_regridded = regridder(ds_to_regrid).load()
     end_time = time.time()
     elapsed_time = end_time - start_time
 
@@ -263,25 +276,31 @@ def check_if_downloaded(variable_dirs, download_settings=download_settings, pare
         path_name = os.path.join(parent_dir, "cesm_data", var_args[variable]["save_name"])
         files = os.listdir(path_name)
         
-        # get the specific member ids that have been downloaded
-        downloaded_members = []
-        for f in files:
-            downloaded_members.append(int(f.split("_")[-1].split(".")[0]))
+        if len(files) > 0:
+            # get the specific member ids that have been downloaded
+            downloaded_members = []
+            for f in files:
+                downloaded_members.append(int(f.split("_")[-1].split(".")[0]))
+            print(f"Found {len(downloaded_members)} existing downloaded members for requested variable {variable}")
 
-        # remove the downloaded member ids from the download_settings
-        if download_settings["member_id"] == "all":
-            download_settings_updated["member_id"] = [i for i in range(100) if i not in downloaded_members]
-        elif type(download_settings["member_id"]) == list:
-            download_settings_updated["member_id"] = [i for i in download_settings["member_id"] if i not in downloaded_members]
-        else:
-            raise TypeError("download_settings['member_id'] needs to be a list or 'all'")
-        
-        if len(download_settings_updated["member_id"]) == 0:
-            download_settings_updated["vars"].remove(variable)
-            print(f"Variable {variable} has already been downloaded for all ensemble members. Skipping...")
+            # remove the downloaded member ids from the download_settings
+            if download_settings["member_id"][variable] == "all":
+                download_settings_updated["member_id"][variable] = [i for i in range(100) if i not in downloaded_members]
+            elif type(download_settings["member_id"][variable]) == list:
+                download_settings_updated["member_id"][variable] = [i for i in download_settings["member_id"][variable] if i not in downloaded_members]
+            else:
+                raise TypeError("download_settings['member_id'] needs to be a list or 'all'")
+            
+            if len(download_settings_updated["member_id"][variable]) == 0:
+                download_settings_updated["vars"].remove(variable)
+                print(f"Variable {variable} has already been downloaded for all ensemble members. Skipping...")
+
     return download_settings_updated
     
+
 def main():
+    global download_settings
+
     variable_dirs = make_save_directories(download_settings=download_settings, parent_dir=download_settings["save_directory"])
 
     output_grid = generate_sps_grid()
@@ -295,22 +314,27 @@ def main():
         if merged_ds is None: continue
 
         # download one ensemble member at a time 
-        if download_settings["member_id"] == "all": 
+        if download_settings["member_id"][variable] == "all": 
             members_to_download = range(merged_ds.member_id.size)
-        elif isinstance(download_settings["member_id"], list): 
-            members_to_download = download_settings["member_id"]
-        else: raise TypeError("download_settings['member_id'] needs to be a list or 'all'")
+        elif isinstance(download_settings["member_id"][variable], list): 
+            members_to_download = download_settings["member_id"][variable]
+        else: raise TypeError("download_settings['member_id'][variable] needs to be a list or 'all'")
 
         for i in members_to_download:
             subset = subset_variable_dataset(merged_ds, variable, member_id=i, chunk=download_settings["chunk"])
+            
+            if subset is None: continue 
 
             # regrid variable 
+            print("Downloading data and regridding (this step may take a while)... ")
             regridded_subset = regrid_variable(subset, output_grid)
+
             print("saving... ", end="")
-            save_path = os.path.join(variable_dirs[variable], f"{var_args[variable]['save_name']}_member_{i}.nc")
+            file_name = f"{var_args[variable]['save_name']}_member_{i:02d}.nc"
+            save_path = os.path.join(variable_dirs[variable], file_name)
             regridded_subset.to_netcdf(save_path)
             regridded_subset.close()
-            print("done!")            
+            print("done! \n")            
 
 if __name__ == "__main__":
     main()
