@@ -21,7 +21,7 @@ import h5py
 # module imports
 from src import models
 from src import models_util
-from src import util
+from src import util_era5
 from src import config
 from src import losses
 
@@ -122,5 +122,5 @@ if __name__ == "__main__":
     )
     print("saving...", end="")
     
-    util.write_nc_file(valtest_pred_ds, f"{config.DATA_DIRECTORY}/sicpred/models/experiments/recover_old_ensemble/valtest_pred.nc", overwrite=True)
+    util_era5.write_nc_file(valtest_pred_ds, f"{config.DATA_DIRECTORY}/sicpred/models/experiments/recover_old_ensemble/valtest_pred.nc", overwrite=True)
     print("done! \n\n")

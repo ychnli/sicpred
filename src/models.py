@@ -10,7 +10,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 from src import config
-from src import util 
+from src import util_era5 
 
 
 def linear_trend(target_month, save_path, linear_years="all", verbose=1):
@@ -66,7 +66,7 @@ def linear_trend(target_month, save_path, linear_years="all", verbose=1):
     # Compute regression 
     years = subset_target_months.time.dt.year.values
     print(f"Computing linear regression using {linear_years} years...", end=" ")
-    reg_result = util.linear_regress_array(years, subset_target_months.values, axis=0, mask=land_and_open_ocean_mask)
+    reg_result = util_era5.linear_regress_array(years, subset_target_months.values, axis=0, mask=land_and_open_ocean_mask)
     print("done!")
 
     prediction_npy = reg_result[0] * target_month.year + reg_result[1]

@@ -19,7 +19,7 @@ import h5py
 # module imports
 from src import models
 from src import models_util
-from src import util
+from src import util_era5
 from src import config
 from src import losses
 

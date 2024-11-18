@@ -13,7 +13,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-from src import util
+from src import util_era5
 from src import config
 
 ##########################################################################################
@@ -295,7 +295,7 @@ def train_model(model, device, model_hyperparam_configs, optimizer, criterion,
         model_hyperparam_configs["final_epoch"] = num_epochs
         
     os.makedirs(f"{config.DATA_DIRECTORY}/sicpred/val_predictions", exist_ok=True)
-    util.save_dict_to_pickle(model_hyperparam_configs, f"{config.DATA_DIRECTORY}/sicpred/models/{model_name}.pkl")
+    util_era5.save_dict_to_pickle(model_hyperparam_configs, f"{config.DATA_DIRECTORY}/sicpred/models/{model_name}.pkl")
     torch.save(model.state_dict(), f"{config.DATA_DIRECTORY}/sicpred/models/{model_name}.pth")
     if verbose >= 1: print("done! \n\n")
 

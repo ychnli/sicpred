@@ -5,14 +5,6 @@
 # grid. 
 ######################################################################
 
-
-
-# TODO: 
-
-# Batch download from cloud 
-
-# Regrid to polar stereographic projection 
-
 # Normalize 
 
 # Prepare data pairs 
