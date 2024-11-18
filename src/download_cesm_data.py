@@ -6,12 +6,14 @@ import xesmf as xe
 import time
 import os
 import pyproj
+import sys
+from joblib import Parallel, delayed
 from src import config 
 
 #################### configure these! ####################
 download_settings = {
     # variables to download 
-    "vars": ["U", "hi", "Z3"], #["ICEFRAC", "TEMP", "FLNS", "FSNS", "PSL", "Z3", "U", "V", "hi"],
+    "vars": ["ICEFRAC", "TEMP", "FLNS", "FSNS", "PSL", "Z3", "U", "V", "hi"],
 
     "chunk": "default",
     
@@ -32,49 +34,58 @@ var_args = {
     "ICEFRAC": {
         "p_index": None,
         "save_name": "icefrac",
-        "long_name": "Sea ice fraction"
+        "long_name": "Sea ice fraction",
+        "grid": "atm"
     },
     "TEMP": {
         "p_index": 0,
         "lat_slice": slice(0, 93),
         "save_name": "temp",
-        "long_name": "Sea surface temperature"
+        "long_name": "Sea surface temperature",
+        "grid": "ocn"
     },
     "FLNS": {
         "p_index": None,
         "save_name": "lw_flux",
-        "long_name": "Net longwave flux at surface"
+        "long_name": "Net longwave flux at surface",
+        "grid": "atm"
     },
     "FSNS": {
         "p_index": None,
         "save_name": "sw_flux",
-        "long_name": "Net shortwave flux at surface"
+        "long_name": "Net shortwave flux at surface",
+        "grid": "atm"
     },
     "PSL": {
         "p_index": None,
         "save_name": "psl",
-        "long_name": "Sea level pressure"
+        "long_name": "Sea level pressure",
+        "grid": "atm"
     },
     "Z3": {
         "p_index": 20,
         "save_name": "geopotential",
-        "long_name": "Geopotential height at 500 hPa"
+        "long_name": "Geopotential height at 500 hPa",
+        "grid": "atm"
     },
     "U": {
         "p_index": -1,
         "save_name": "ua",
-        "long_name": "Surface zonal wind"
+        "long_name": "Surface zonal wind",
+        "grid": "atm"
     },
     "V": {
         "p_index": -1,
         "save_name": "va",
-        "long_name": "Surface meridional wind"
+        "long_name": "Surface meridional wind",
+        "grid": "atm"
     },
     "hi": {
         "p_index": None,
         "lat_slice": slice(0, 93),
         "save_name": "icethick",
-        "long_name": "Sea ice thickness"
+        "long_name": "Sea ice thickness",
+        "grid": "ocn"
     }
 }
 
@@ -131,7 +142,7 @@ def retrieve_variable_dataset(catalog, variable, verbose=1):
     if verbose >= 1: print("done! \n")
     return merged_ds 
 
-def subset_variable_dataset(merged_ds, variable, member_id, chunk="default", var_args=var_args):
+def subset_variable_dataset(merged_ds, variable, member_id, chunk="default", time="all", var_args=var_args):
     print(f"Subsetting ensemble member {member_id}... ", end="")
     
     component = var_args[variable]["component"]
@@ -180,6 +191,12 @@ def subset_variable_dataset(merged_ds, variable, member_id, chunk="default", var
 
         subset = subset.assign_coords(lat=([lat_index_name, lon_index_name], lat), lon=([lat_index_name, lon_index_name], lon))
     
+    # subset time if specified 
+    if time != "all":
+        if isinstance(time, slice) or isinstance(time, int): 
+            subset = subset.isel(time=time)
+        else: return TypeError("time argument must either be 'all', or slice, or int")
+
     print("done!")
     
     # turn subset into a dataset and rename it 
@@ -217,9 +234,9 @@ def generate_sps_grid(grid_size=80, lat_boundary=-52.5):
     return output_grid
 
 
-def regrid_variable(ds_to_regrid, output_grid):
+def regrid_variable(ds_to_regrid, input_grid, output_grid):
     start_time = time.time()
-    weight_file = f'{config.DATA_DIRECTORY}/cesm_lens/grids/cesm_to_sps_bilinear_regridding_weights.nc'
+    weight_file = f'{config.DATA_DIRECTORY}/cesm_lens/grids/cesm_{input_grid}_to_sps_bilinear_regridding_weights.nc'
 
     if os.path.exists(weight_file):
         regridder = xe.Regridder(ds_to_regrid, output_grid, 'bilinear', weights=weight_file, 
@@ -291,12 +308,35 @@ def check_if_downloaded(variable_dirs, download_settings=download_settings, pare
             else:
                 raise TypeError("download_settings['member_id'] needs to be a list or 'all'")
             
-            if len(download_settings_updated["member_id"][variable]) == 0:
-                download_settings_updated["vars"].remove(variable)
-                print(f"Variable {variable} has already been downloaded for all ensemble members. Skipping...")
-
     return download_settings_updated
     
+def process_member(variable, merged_ds, input_grid, output_grid, i, variable_dirs, var_args, chunk):
+    """
+    Helper function to download, regrid, and save data for a specific ensemble member.
+    """
+    try:
+        subset = subset_variable_dataset(merged_ds, variable, member_id=i, chunk=chunk)
+        
+        if subset is None:
+            return
+
+        # Regrid variable
+        print(f"Downloading data and regridding for member {i} (this step may take a while)...")
+        regridded_subset = regrid_variable(subset, input_grid, output_grid)
+        
+        # Save the regridded subset
+        print(f"Saving member {i}... ", end="")
+        file_name = f"{var_args[variable]['save_name']}_member_{i:02d}.nc"
+        save_path = os.path.join(variable_dirs[variable], file_name)
+        regridded_subset.to_netcdf(save_path)
+        regridded_subset.close()
+        print("done!")
+
+    except Exception as e:
+        print(f"Error processing member {i}: {e}")
+
+
+
 
 def main():
     global download_settings
@@ -309,32 +349,25 @@ def main():
     download_settings = check_if_downloaded(variable_dirs, download_settings=download_settings, parent_dir=download_settings["save_directory"])
 
     for variable in download_settings["vars"]:
+        input_grid = var_args[variable]["grid"]
+
         merged_ds = retrieve_variable_dataset(catalog=CATALOG, variable=variable)
         
         if merged_ds is None: continue
 
-        # download one ensemble member at a time 
         if download_settings["member_id"][variable] == "all": 
             members_to_download = range(merged_ds.member_id.size)
         elif isinstance(download_settings["member_id"][variable], list): 
-            members_to_download = download_settings["member_id"][variable]
+            if len(download_settings["member_id"][variable]) == 0: 
+                continue
+            else:
+                members_to_download = download_settings["member_id"][variable]
         else: raise TypeError("download_settings['member_id'][variable] needs to be a list or 'all'")
 
         for i in members_to_download:
-            subset = subset_variable_dataset(merged_ds, variable, member_id=i, chunk=download_settings["chunk"])
-            
-            if subset is None: continue 
-
-            # regrid variable 
-            print("Downloading data and regridding (this step may take a while)... ")
-            regridded_subset = regrid_variable(subset, output_grid)
-
-            print("saving... ", end="")
-            file_name = f"{var_args[variable]['save_name']}_member_{i:02d}.nc"
-            save_path = os.path.join(variable_dirs[variable], file_name)
-            regridded_subset.to_netcdf(save_path)
-            regridded_subset.close()
-            print("done! \n")            
+            process_member(variable, merged_ds, input_grid, output_grid, i,
+                variable_dirs, var_args, download_settings["chunk"])
+       
 
 if __name__ == "__main__":
     main()
