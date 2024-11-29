@@ -1,12 +1,13 @@
 import os 
 import xarray as xr
 import numpy as np 
+import pandas as pd
 
 from src import util_era5
-from src import config_cesm
+from src import config_cesm as config
 from src.util_era5 import write_nc_file
 
-VAR_NAMES = config_cesm.VAR_NAMES
+VAR_NAMES = config.VAR_NAMES
 
 def find_downloaded_vars():
     """
@@ -21,7 +22,7 @@ def find_downloaded_vars():
     n_members = []
 
     for i,variable in enumerate(VAR_NAMES):
-        directory = os.path.join(config_cesm.RAW_DATA_DIRECTORY, variable)
+        directory = os.path.join(config.RAW_DATA_DIRECTORY, variable)
         
         if os.path.exists(directory):
             files = sorted(os.listdir(directory))
@@ -63,52 +64,48 @@ def normalize(x, m, s, var_name=None):
     return normalized
 
 
-def normalize_data(overwrite=False, verbose=1, vars_to_normalize="all"):
+def normalize_data(var_name, overwrite=False, verbose=1, divide_by_stdev=True):
     """ 
     Normalize inputs based on statistics of the training data and save. 
     """
+    save_dir = os.path.join(config.RAW_DATA_DIRECTORY, "normalized_inputs")
 
-    if vars_to_normalize == "all":
-        vars_to_normalize = VAR_NAMES
+    save_path = os.path.join(save_dir, f"{var_name}_norm.nc")
+    if os.path.exists(save_path) and not overwrite:
+        if verbose >= 1: print(f"Already found normalized file for {var_name}. Skipping...")
+        return None
+
+    print(f"Normalizing {var_name}, divide_by_stdev = {divide_by_stdev}...", end=" ")
+
+    # First make a merged dataset from the separate ones 
+    file_list = sorted(os.listdir(f"{config.RAW_DATA_DIRECTORY}/{var_name}"))
+    if f"{var_name}_combined.nc" in file_list: file_list.remove(f"{var_name}_combined.nc")
+
+    ds_list = []
+
+    for file in file_list:
+        ds = xr.open_dataset(os.path.join(f"{config.RAW_DATA_DIRECTORY}/{var_name}", file), chunks={'time': 120})
+        ds_list.append(ds)
+
+    merged_ds = xr.concat(ds_list, dim="member_id")
+
+    # change the time index to pandas instead of cftime 
+    merged_ds = merged_ds.assign_coords(time=pd.date_range("1850-01", "2100-12", freq="MS"))
+
+    # save the merged ds before normalizing 
+    write_nc_file(merged_ds, f"{config.RAW_DATA_DIRECTORY}/{var_name}/{var_name}_combined.nc", overwrite)
     
-    if verbose >= 1: print(f"Normalizing variables {vars_to_normalize}")
+    # now calculate the climatology. We define this as the period from 1850 to 1980 
+    # across all ensemble members. This means that the climate change signal, especially
+    # for the ssp simulations, will be present. 
+    da = merged_ds[var_name]
+    time_subset = pd.date_range("1850-01", "1979-12", freq="MS")
 
-    save_dir = os.path.join(config.RAW_DATA_DIRECTORY, "/normalized_inputs")
-    os.makedirs(save_dir, exist_ok=True)
-
-    for var_name in vars_to_normalize:
-        save_path = os.path.join(save_dir, f"{var_name}_norm.nc")
-        if os.path.exists(save_path) and not overwrite:
-            if verbose >= 1: print(f"Already found normalized file for {var_name}. Skipping...")
-            continue
-
-        print(f"Normalizing {var_name}...", end=" ")
-
-        # First make a merged dataset from the separate ones 
-        file_list = sorted(os.listdir(f"{config.RAW_DATA_DIRECTORY}/{var_name}"))
-        ds_list = []
-
-        for file in file_list:
-            ds = xr.open_dataset(os.path.join(f"{config.RAW_DATA_DIRECTORY}/{var_name}", file), chunks={'time': 120})
-            ds_list.append(ds)
-
-        merged_ds = xr.concat(ds_list, dim="member_id")
-
-        # change the time index to pandas instead of cftime 
-        merged_ds[var_name].assign_coords(time=pd.date_range("1850-01", "2100-12", freq="MS"))
-
-        # save the merged ds before normalizing 
-        merged_ds.to_netcdf(f"{config.RAW_DATA_DIRECTORY}/{var_name}/{var_name}_combined.nc")
-        
-        # now calculate the climatology. We define this as the period from 1850 to 1980 
-        # across all ensemble members. This means that the climate change signal, especially
-        # for the ssp simulations, will be present. 
-        da = ds[var_name]
+    if divide_by_stdev:
         print("calculating means and stdev...", end=" ")
 
-        time_subset = pd.date_range("1850-01", "1979-12", freq="MS")
-        monthly_means = da.sel(time=time_subset).groupby("time.month").mean("time", "member_id").load()
-        monthly_stdevs = da.sel(time=time_subset).groupby("time.month").std("time", "member_id").load()
+        monthly_means = da.sel(time=time_subset).groupby("time.month").mean(dim=("time", "member_id")).load()
+        monthly_stdevs = da.sel(time=time_subset).groupby("time.month").std(dim=("time", "member_id")).load()
         print("done!")
 
         months = da['time'].dt.month
@@ -118,17 +115,31 @@ def normalize_data(overwrite=False, verbose=1, vars_to_normalize="all"):
             monthly_means.sel(month=months),
             monthly_stdevs.sel(month=months),
             var_name,
-            output_dtypes=[da.dtype]
+            output_dtypes=[da.dtype],
+            dask="allowed"
         )
         
         normalized_ds = normalized_da.to_dataset(name=var_name)
         monthly_means_ds = monthly_means.to_dataset(name=var_name)
         monthly_stdevs_ds = monthly_stdevs.to_dataset(name=var_name)
-
-        print("Saving...", end="")
-        write_nc_file(monthly_means_ds, os.path.join(save_dir, f"{var_name}_mean.nc"), overwrite)
-        write_nc_file(monthly_stdevs_ds, os.path.join(save_dir, f"{var_name}_stdev.nc"), overwrite)
-        write_nc_file(normalized_ds, os.path.join(save_dir, f"{var_name}_norm.nc"), overwrite)
+    else: 
+        print("calculating means...", end=" ")
+        monthly_means = da.sel(time=time_subset).groupby("time.month").mean(dim=("time", "member_id")).load()
         print("done!")
 
-    print("done! \n\n")
+        months = da['time'].dt.month
+        anom_da = da - monthly_means.sel(month=months)
+        
+        anom_ds = anom_da.to_dataset(name=var_name)
+        monthly_means_ds = monthly_means.to_dataset(name=var_name)
+
+
+    print("Saving...", end="")
+    write_nc_file(monthly_means_ds, os.path.join(save_dir, f"{var_name}_mean.nc"), overwrite)
+    if divide_by_stdev: 
+        write_nc_file(monthly_stdevs_ds, os.path.join(save_dir, f"{var_name}_stdev.nc"), overwrite)
+        write_nc_file(normalized_ds, os.path.join(save_dir, f"{var_name}_norm.nc"), overwrite)
+    else:
+        write_nc_file(anom_ds, os.path.join(save_dir, f"{var_name}_anom.nc"), overwrite)
+    print("done!")
+

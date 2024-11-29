@@ -42,7 +42,6 @@ def write_nc_file(ds, save_path, overwrite, verbose=1):
             ds.to_netcdf(temp_path)
             os.replace(temp_path, save_path)
             if verbose == 2: print(f"Overwrote {save_path}")
-
     else: 
         ds.to_netcdf(save_path)
         if verbose == 2: print(f"Saved to {save_path}")

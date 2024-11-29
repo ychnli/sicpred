@@ -9,16 +9,19 @@ from src import util_cesm
 from src import config_cesm
 
 def main():
-    # check consistency between downloaded data
-    n_members = util_cesm.find_downloaded_vars()
-
     # Normalize 
     vars_to_normalize = config_cesm.VAR_NAMES
     vars_to_normalize.remove("temp")
-    util_cesm.normalize_data(overwrite=False, verbose=2, vars_to_normalize=vars_to_normalize)
+
+    for var_name in vars_to_normalize:
+        if var_name in ["icefrac", "icethick"]:
+            divide_by_stdev = False
+        else: 
+            divide_by_stdev = True
+        util_cesm.normalize_data(var_name, overwrite=False, verbose=2, divide_by_stdev=divide_by_stdev)
 
     # Prepare data pairs 
-    
+
 
     
 
