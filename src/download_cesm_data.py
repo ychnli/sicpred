@@ -310,7 +310,8 @@ def check_if_downloaded(variable_dirs, download_settings=download_settings, pare
             
     return download_settings_updated
     
-def process_member(variable, merged_ds, input_grid, output_grid, i, variable_dirs, var_args, chunk):
+def process_member(variable, merged_ds, input_grid, output_grid, 
+                    i, variable_dirs, var_args, chunk, save_name="enumerate", save_name_id=None):
     """
     Helper function to download, regrid, and save data for a specific ensemble member.
     """
@@ -325,8 +326,16 @@ def process_member(variable, merged_ds, input_grid, output_grid, i, variable_dir
         regridded_subset = regrid_variable(subset, input_grid, output_grid)
         
         # Save the regridded subset
-        print(f"Saving member {i}... ", end="")
-        file_name = f"{var_args[variable]['save_name']}_member_{i:02d}.nc"
+        if save_name == "enumerate":
+            print(f"Saving member {i}... ", end="")
+            file_name = f"{var_args[variable]['save_name']}_member_{i:02d}.nc"
+
+        if save_name == "id_code":
+            if save_name_id is None:
+                raise Exception("If save_name is set to id_code, you must specify a save_name_id to name the processed file")
+            print(f"Saving member {save_name_id}... ", end="")
+            file_name = f"{var_args[variable]['save_name']}_member_{save_name_id}.nc"
+            
         save_path = os.path.join(variable_dirs[variable], file_name)
         regridded_subset.to_netcdf(save_path)
         regridded_subset.close()
