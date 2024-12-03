@@ -70,7 +70,11 @@ def normalize_data(var_name, overwrite=False, verbose=1, divide_by_stdev=True):
     """
     save_dir = os.path.join(config.RAW_DATA_DIRECTORY, "normalized_inputs")
 
-    save_path = os.path.join(save_dir, f"{var_name}_norm.nc")
+    if divide_by_stdev:
+        save_path = os.path.join(save_dir, f"{var_name}_norm.nc")
+    else: 
+        save_path = os.path.join(save_dir, f"{var_name}_anom.nc")
+        
     if os.path.exists(save_path) and not overwrite:
         if verbose >= 1: print(f"Already found normalized file for {var_name}. Skipping...")
         return None
@@ -85,12 +89,11 @@ def normalize_data(var_name, overwrite=False, verbose=1, divide_by_stdev=True):
 
     for file in file_list:
         ds = xr.open_dataset(os.path.join(f"{config.RAW_DATA_DIRECTORY}/{var_name}", file), chunks={'time': 120})
+        # change the time index to pandas instead of cftime
+        ds = ds.assign_coords(time=pd.date_range("1850-01", "2100-12", freq="MS"))
         ds_list.append(ds)
 
     merged_ds = xr.concat(ds_list, dim="member_id")
-
-    # change the time index to pandas instead of cftime 
-    merged_ds = merged_ds.assign_coords(time=pd.date_range("1850-01", "2100-12", freq="MS"))
 
     # save the merged ds before normalizing 
     write_nc_file(merged_ds, f"{config.RAW_DATA_DIRECTORY}/{var_name}/{var_name}_combined.nc", overwrite)
@@ -138,8 +141,8 @@ def normalize_data(var_name, overwrite=False, verbose=1, divide_by_stdev=True):
     write_nc_file(monthly_means_ds, os.path.join(save_dir, f"{var_name}_mean.nc"), overwrite)
     if divide_by_stdev: 
         write_nc_file(monthly_stdevs_ds, os.path.join(save_dir, f"{var_name}_stdev.nc"), overwrite)
-        write_nc_file(normalized_ds, os.path.join(save_dir, f"{var_name}_norm.nc"), overwrite)
+        write_nc_file(normalized_ds, save_path, overwrite)
     else:
-        write_nc_file(anom_ds, os.path.join(save_dir, f"{var_name}_anom.nc"), overwrite)
+        write_nc_file(anom_ds, save_path, overwrite)
     print("done!")
 

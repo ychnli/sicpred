@@ -11,7 +11,6 @@ from src import config_cesm
 def main():
     # Normalize 
     vars_to_normalize = config_cesm.VAR_NAMES
-    vars_to_normalize.remove("temp")
 
     for var_name in vars_to_normalize:
         if var_name in ["icefrac", "icethick"]:
