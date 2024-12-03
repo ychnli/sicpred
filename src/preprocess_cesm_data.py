@@ -17,7 +17,9 @@ def main():
             divide_by_stdev = False
         else: 
             divide_by_stdev = True
-        util_cesm.normalize_data(var_name, overwrite=False, verbose=2, divide_by_stdev=divide_by_stdev)
+            
+        util_cesm.normalize_data(var_name, normalization_scheme, 
+                                overwrite=False, verbose=2, divide_by_stdev=divide_by_stdev)
 
     # Prepare data pairs 
 

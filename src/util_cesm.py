@@ -64,10 +64,25 @@ def normalize(x, m, s, var_name=None):
     return normalized
 
 
-def normalize_data(var_name, overwrite=False, verbose=1, divide_by_stdev=True):
+def normalize_data(var_name, normalization_scheme, 
+                    overwrite=False, verbose=1, divide_by_stdev=True):
     """ 
     Normalize inputs based on statistics of the training data and save. 
+
+    TODO: implement normalization_scheme (a dict with args to customize how we normalize the dataset).
+    Want to be able to set e.g., different time range or a set of ensemble members over which to compute 
+    the normalization. Should also add metadata to the saved files that retains how the normalization was
+    computed. 
+
+    Param:
+        (string)    var_name: the standard name of the variable
+        (dict)      normaliation_scheme: a dict of settings for normalization (not implemented yet)
+        (bool)      overwrite 
+        (int)       verbose  
+        (bool)      divide_by_stdev: if True, computes (x - mu)/(sigma)
+                                     if False, computes (x - mu)  
     """
+
     save_dir = os.path.join(config.RAW_DATA_DIRECTORY, "normalized_inputs")
 
     if divide_by_stdev:
