@@ -1,5 +1,6 @@
 import intake
 import xarray as xr
+import os
 
 from src import download_cesm_data
 from src.download_cesm_data import var_args 
