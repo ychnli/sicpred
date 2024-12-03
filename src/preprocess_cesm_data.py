@@ -22,7 +22,7 @@ def main():
                                 overwrite=False, verbose=2, divide_by_stdev=divide_by_stdev)
 
     # Prepare data pairs 
-
+    #util_cesm.save_inputs_files(config_cesm.input_config_all, "")
 
     
 

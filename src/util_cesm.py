@@ -161,3 +161,111 @@ def normalize_data(var_name, normalization_scheme,
         write_nc_file(anom_ds, save_path, overwrite)
     print("done!")
 
+
+
+def load_inputs_data_da_dict(input_config, normalization_scheme=None):
+    """
+    Param:
+        (dict)      input_config
+        (dict)      TODO: normalization_scheme (currently does nothing)
+
+    Returns:
+        (dict)      dictionary of xr.DataArray of normalized inputs, with 
+                    variable names as keys. 
+    """
+
+    data_da_dict = {}
+
+    for var in VAR_NAMES: 
+        if not input_config[var]["include"]:
+            continue
+
+        if input_config[var]["divide_by_stdev"]:
+            norm = "norm"
+        else: 
+            norm = "anom"
+
+        ds = xr.open_dataset(f"{RAW_DATA_DIRECTORY}/normalized_inputs/{var}_{norm}.nc", chunks={"member_id": 1})
+
+        data_da_dict[var] = ds[var]
+
+    # Get the common ensemble member_ids 
+    common_member_ids = set()
+    for i,da in enumerate(data_da_dict.values()): 
+        if i == 0: 
+            common_member_ids = set(da.member_id.data)
+        else:
+            common_member_ids = common_member_ids & set(da.member_id.data)
+
+    for var, da in data_da_dict.items():
+        da = da.sel(member_id = list(common_member_ids))
+        
+        # drop this auxiliary variable that is leftover from normalization 
+        da = da.drop_vars("month")
+        data_da_dict[var] = da
+
+    return data_da_dict
+
+
+
+def save_inputs_files(input_config, save_path):
+    """
+    Writes a model-ready input file (.nc) for each ensemble member to save_path
+
+    Param:
+        (dict)      input_config
+        (string)    save_path
+    """
+
+    data_da_dict = load_inputs_data_da_dict(input_config)
+
+    # save each ensemble member separately so the files don't get too big 
+    member_ids = data_da_dict["icefrac"].member_id.data
+    for member_id in member_ids:
+        save_name = os.path.join(save_path, f"inputs_member_{member_id}.nc")
+        if os.path.exists(save_name):
+            continue
+
+        print(f"Concatenating data into model input format for member {member_id}...")
+        start_time = time.time()
+        member_da_list = [] # we will concat this later 
+
+        for start_prediction_month in input_config["start_prediction_months"]:
+
+            time_da_list = []
+            for input_var in VAR_NAMES:
+                input_var_params = input_config[input_var]
+                if not input_var_params["include"]: 
+                    continue 
+
+                prediction_input_months = pd.date_range(start_prediction_month - pd.DateOffset(months=input_var_params["lag"]), 
+                                                        start_prediction_month - pd.DateOffset(months=1), freq="MS")
+
+                input_data = data_da_dict[input_var].sel(time=prediction_input_months, member_id=member_id)
+
+                # rename the time coordinate to channel 
+                lag = input_var_params["lag"]
+                input_data = input_data.assign_coords(time=[f"{input_var}_lag{lag+1-i}" for i in range(1, lag+1)])
+                input_data = input_data.rename({"time": "channel"})
+
+                # add a coordinate to denote the start prediction month (time origin)
+                input_data = input_data.assign_coords(start_prediction_month=start_prediction_month)
+
+                time_da_list.append(input_data)
+
+                # TODO: add land mask, add cosine/sine of month index
+            
+            time_da_merged = xr.concat(time_da_list, dim="channel", coords='minimal', compat='override')
+            member_da_list.append(time_da_merged)
+        
+        da_merged = xr.concat(member_da_list, dim="start_prediction_month", coords="minimal", compat='override')
+
+        # rechunk
+        da_merged = da_merged.chunk(chunks={"start_prediction_month":12, "channel":-1})
+        
+        print("done! Saving...")
+        da_merged.to_dataset(name="data").to_netcdf(save_name)
+
+        end_time = time.time()
+        print(f"done! Elapsed time: {start_time - end_time:02f}")
+
