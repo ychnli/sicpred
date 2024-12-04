@@ -2,6 +2,7 @@ import os
 import xarray as xr
 import numpy as np 
 import pandas as pd
+import time
 
 from src import util_era5
 from src import config_cesm as config
@@ -185,7 +186,7 @@ def load_inputs_data_da_dict(input_config, normalization_scheme=None):
         else: 
             norm = "anom"
 
-        ds = xr.open_dataset(f"{RAW_DATA_DIRECTORY}/normalized_inputs/{var}_{norm}.nc", chunks={"member_id": 1})
+        ds = xr.open_dataset(f"{config.RAW_DATA_DIRECTORY}/normalized_inputs/{var}_{norm}.nc", chunks={"member_id": 1})
 
         data_da_dict[var] = ds[var]
 
@@ -216,9 +217,15 @@ def save_inputs_files(input_config, save_path):
         (dict)      input_config
         (string)    save_path
     """
-
+    
     data_da_dict = load_inputs_data_da_dict(input_config)
 
+    # get some auxiliary data
+    x_coords = data_da_dict["icefrac"].x.data
+    y_coords = data_da_dict["icefrac"].y.data
+    land_mask = np.isnan(data_da_dict["temp"].isel(time=0, member_id=0)).data 
+    land_mask = np.transpose(land_mask.reshape(1, 80, 80), [0, 2, 1]) # for some reason, x and y get switched
+    
     # save each ensemble member separately so the files don't get too big 
     member_ids = data_da_dict["icefrac"].member_id.data
     for member_id in member_ids:
@@ -233,28 +240,53 @@ def save_inputs_files(input_config, save_path):
         for start_prediction_month in input_config["start_prediction_months"]:
 
             time_da_list = []
-            for input_var in VAR_NAMES:
-                input_var_params = input_config[input_var]
+            for input_var, input_var_params in input_config.items():
+                if input_var in ["name", "start_prediction_months"]: 
+                    continue
+
                 if not input_var_params["include"]: 
                     continue 
+                
+                if not input_var_params["auxiliary"]:
+                    prediction_input_months = pd.date_range(start_prediction_month - pd.DateOffset(months=input_var_params["lag"]), 
+                                                            start_prediction_month - pd.DateOffset(months=1), freq="MS")
 
-                prediction_input_months = pd.date_range(start_prediction_month - pd.DateOffset(months=input_var_params["lag"]), 
-                                                        start_prediction_month - pd.DateOffset(months=1), freq="MS")
+                    input_data = data_da_dict[input_var].sel(time=prediction_input_months, member_id=member_id)
 
-                input_data = data_da_dict[input_var].sel(time=prediction_input_months, member_id=member_id)
+                    # mask out NaN values
+                    input_data = input_data.fillna(0)
 
-                # rename the time coordinate to channel 
-                lag = input_var_params["lag"]
-                input_data = input_data.assign_coords(time=[f"{input_var}_lag{lag+1-i}" for i in range(1, lag+1)])
-                input_data = input_data.rename({"time": "channel"})
+                    # rename the time coordinate to channel 
+                    lag = input_var_params["lag"]
+                    input_data = input_data.assign_coords(time=[f"{input_var}_lag{lag+1-i}" for i in range(1, lag+1)])
+                    input_data = input_data.rename({"time": "channel"})
+                else:
+                    if input_var == "cosine_of_init_month":
+                        input_data = xr.DataArray(
+                            np.full((1, 80, 80), np.cos(2 * np.pi * start_prediction_month.month / 12)),
+                            dims=["channel", "x", "y"],
+                            coords={"channel": [input_var], "x": x_coords, "y": y_coords},
+                        )
+                    elif input_var == "sine_of_init_month":
+                        input_data = xr.DataArray(
+                            np.full((1, 80, 80), np.sin(2 * np.pi * start_prediction_month.month / 12)),
+                            dims=["channel", "x", "y"],
+                            coords={"channel": [input_var], "x": x_coords, "y": y_coords},
+                        )
+                    elif input_var == "land_mask": 
+                        input_data = xr.DataArray(
+                            land_mask, 
+                            dims=["channel", "x", "y"],
+                            coords={"channel": [input_var], "x": x_coords, "y": y_coords},
+                        )
+                    else: 
+                        raise NotImplementedError()
 
                 # add a coordinate to denote the start prediction month (time origin)
                 input_data = input_data.assign_coords(start_prediction_month=start_prediction_month)
 
                 time_da_list.append(input_data)
 
-                # TODO: add land mask, add cosine/sine of month index
-            
             time_da_merged = xr.concat(time_da_list, dim="channel", coords='minimal', compat='override')
             member_da_list.append(time_da_merged)
         
@@ -262,10 +294,76 @@ def save_inputs_files(input_config, save_path):
 
         # rechunk
         da_merged = da_merged.chunk(chunks={"start_prediction_month":12, "channel":-1})
+
+        # clean up singleton dimensions
+        da_merged = da_merged.drop_vars(("z_t", "lev"))
+        
         
         print("done! Saving...")
         da_merged.to_dataset(name="data").to_netcdf(save_name)
 
         end_time = time.time()
-        print(f"done! Elapsed time: {start_time - end_time:02f}")
+        print(f"done! Elapsed time: {end_time - start_time:.2f} seconds")
+
+
+def save_targets_files(input_config, target_config, save_path):
+    """
+    Writes a model-ready targets file (.nc) for each ensemble member to save_path
+    
+    Param:
+        (dict)      input_config
+        (dict)      target_config
+        (string)    save_path
+    """
+
+    if not target_config["predict_anom"]:
+        raise NotImplementedError()
+    else:
+        if input_config["icefrac"]["divide_by_stdev"]:
+            norm = "norm"
+        else: 
+            norm = "anom"
+
+        input_da_dict = load_inputs_data_da_dict(input_config)
+        da = input_da_dict["icefrac"]
+
+        member_ids = data_da_dict["icefrac"].member_id.data
+        for member_id in member_ids[0:1]:
+            save_name = os.path.join(save_path, f"targets_member_{member_id}.nc")
+            if os.path.exists(save_name):
+                continue
+
+            print(f"Concatenating ground-truth data into model output format for member {member_id}...")
+            start_time = time.time()
+            time_da_list = []
+
+            for start_prediction_month in input_config["start_prediction_months"]:
+                prediction_target_months = pd.date_range(start_prediction_month, 
+                                                        start_prediction_month + pd.DateOffset(months=config.MAX_LEAD_MONTHS-1), 
+                                                        freq="MS")
+                
+                target_data = da.sel(time=prediction_target_months, member_id=member_id)
+
+                # mask out nans
+                target_data = target_data.fillna(0)
+
+                target_data = target_data.assign_coords(time=np.arange(1,7))
+                target_data = target_data.rename({"time": "lead_time"}) 
+
+                # add a coordinate to denote the start prediction month (time origin)
+                target_data = target_data.assign_coords(start_prediction_month=start_prediction_month)
+
+                time_da_list.append(target_data)
+
+            da_merged = xr.concat(time_da_list, dim="start_prediction_month", coords='minimal', compat='override')
+
+            da_merged = da_merged.chunk(chunks={"start_prediction_month":12, "lead_time":-1})
+            
+            print("done! Saving...")
+            da_merged.to_dataset(name="data").to_netcdf(save_name)
+            
+            end_time = time.time()
+            print(f"done! Elapsed time: {end_time - start_time:.2f} seconds")
+            da_merged.to_dataset(name="data").to_netcdf(save_name)
+
 
