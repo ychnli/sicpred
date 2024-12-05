@@ -327,8 +327,8 @@ def save_targets_files(input_config, target_config, save_path):
         input_da_dict = load_inputs_data_da_dict(input_config)
         da = input_da_dict["icefrac"]
 
-        member_ids = data_da_dict["icefrac"].member_id.data
-        for member_id in member_ids[0:1]:
+        member_ids = da.member_id.data
+        for member_id in member_ids:
             save_name = os.path.join(save_path, f"targets_member_{member_id}.nc")
             if os.path.exists(save_name):
                 continue
