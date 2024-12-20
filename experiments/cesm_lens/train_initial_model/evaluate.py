@@ -28,56 +28,52 @@ def main():
     # Load the model and checkpoint
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = UNetRes3(in_channels=60, out_channels=6).to(device)
-    checkpoint = torch.load(checkpoint_path)
+    checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
 
-    # Run inference and collect predictions
-    all_predictions = []
-    all_times = []
-    all_ensemble_members = []
+    # Known dimensions
+    time_coords = data_split_settings["test"]
+    num_members = len(ensemble_members)
+    channels, x_dim, y_dim = 6, 80, 80
+    reference_grid = xr.open_dataset(f"/scratch/users/yucli/cesm_data/icefrac/icefrac_member_00.nc")
 
-    with torch.no_grad():
-        for batch in test_dataloader:
-            inputs = batch["input"].to(device)
-            predictions = model(inputs)  # Shape: [batch_size, out_channels, x, y]
-            predictions = predictions.cpu().numpy()  # Move to CPU for saving
-            
-            all_predictions.append(predictions)
-            
-            # Process additional metadata
-            start_prediction_month = batch["start_prediction_month"].cpu().numpy()
-            all_times.append(start_prediction_month)
-            all_ensemble_members.append(batch["member_id"])
-
-    # Concatenate predictions and metadata
-    all_predictions = np.concatenate(all_predictions, axis=0)  # Shape: [time_samples, channels, x, y]
-    all_times = np.array(all_times).reshape(-1, 2)  # Shape: [time_samples, 2]
-    all_ensemble_members = np.concatenate(all_ensemble_members)
-
-    # Convert predictions to xarray Dataset
-    years, months = all_times[:, 0], all_times[:, 1]
-    time_coords = pd.date_range(
-        start=f"{int(years[0])}-{int(months[0]):02d}",
-        periods=len(years),
-        freq="MS"
-    )
+    # Initialize an empty xarray Dataset
     ds = xr.Dataset(
         {
             "predictions": (
-                ["time", "ensemble_member", "channel", "x", "y"],
-                all_predictions,
+                ["start_prediction_month", "member_id", "lead_time", "y", "x"],
+                np.full((len(time_coords), num_members, channels, y_dim, x_dim), np.nan, dtype=np.float32)
             )
         },
         coords={
-            "time": time_coords,
-            "ensemble_member": all_ensemble_members,
-            "x": np.arange(all_predictions.shape[-2]),
-            "y": np.arange(all_predictions.shape[-1]),
-        },
+            "start_prediction_month": time_coords,
+            "member_id": ensemble_members,
+            "lead_time": np.arange(1, channels+1),
+            "y": reference_grid.y.values,
+            "x": reference_grid.x.values,
+        }
     )
 
-    # Save predictions as NetCDF
+    # Populate the Dataset with predictions
+    with torch.no_grad():
+        for i,batch in enumerate(test_dataloader):
+            print(f"Evaluating for batch {i}")
+            inputs = batch["input"].to(device)
+            predictions = model(inputs).cpu().numpy()  # Move predictions to CPU
+
+            # Extract metadata
+            start_year, start_month = batch["start_prediction_month"].cpu().numpy()[0]
+            member_id = batch["member_id"][0]
+
+            # Find the appropriate indices
+            time_idx = list(time_coords).index(pd.Timestamp(year=start_year, month=start_month, day=1))
+            member_idx = list(ensemble_members).index(member_id)
+
+            # Populate the dataset at the appropriate indices
+            ds["predictions"][time_idx, member_idx, :, :, :] = predictions[0] 
+
+    # Save the Dataset as NetCDF
     ds.to_netcdf(output_path)
     print(f"Predictions saved to {output_path}")
 
