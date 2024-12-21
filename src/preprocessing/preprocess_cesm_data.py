@@ -7,13 +7,29 @@
 ######################################################################
 
 import os 
-from src import util_cesm
-from src import config_cesm
+import argparse
+import importlib
+from src.utils import util_cesm
+
+
+def load_config(config_path):
+    spec = importlib.util.spec_from_file_location("config", config_path)
+    config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config)
+    return config
+
 
 def main():
+    parser = argparse.ArgumentParser(description="prepare data with specified config")
+    parser.add_argument("--config", type=str, required=True, help="Path to the configuration file (e.g., config.py)")
+    args = parser.parse_args()
+
+    # load the config variables
+    config = load_config(args.config)
+
     # Normalize 
     print("Normalizing data... \n")
-    vars_to_normalize = config_cesm.VAR_NAMES
+    vars_to_normalize = config.VAR_NAMES
     for var_name in vars_to_normalize:
         if var_name in ["icefrac", "icethick"]:
             divide_by_stdev = False

@@ -10,7 +10,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 from src import config
-from src import util_era5 
+from src.utils import util_era5 
 
 
 def linear_trend(target_month, save_path, linear_years="all", verbose=1):
@@ -128,19 +128,17 @@ class UNetRes3(nn.Module):
     number at the end of encoder and decoder blocks denote their depth in 
     the network (thus we have, E1 -> E2 -> E3 -> B -> D3 -> D2 -> D1) where
     B is the bottleneck block
-
-    mode: (str) 'regression' or 'classification'
     """
 
-    def __init__(self, in_channels, out_channels, mode, device, spatial_shape=(336, 320), 
-                n_channels_factor=1, filter_size=3, T=1.0, n_classes=2, predict_anomalies=False,
-                clip_near_zero_anomalies=True, epsilon=0.01):
+    def __init__(self, in_channels, out_channels, predict_anomalies, 
+                spatial_shape=(80, 80), 
+                n_channels_factor=1, 
+                filter_size=3, 
+                clip_near_zero_values=True, 
+                epsilon=0.01):
 
         super(UNetRes3, self).__init__()
-        self.mode = mode 
-        self.T = T # temperature scaling factor 
-        self.predict_anomalies = predict_anomalies
-        self.clip_near_zero_anomalies = True
+        self.clip_near_zero_values = True
         self.epsilon = epsilon 
 
         self.encoder1 = self.conv_block(in_channels, int(64 * n_channels_factor), filter_size)
@@ -159,21 +157,18 @@ class UNetRes3(nn.Module):
         self.decoder1_conv_2 = self.conv(int(64 * n_channels_factor), int(64 * n_channels_factor), filter_size)
         
         self.final_conv_reg = nn.Conv2d(int(64 * n_channels_factor), out_channels, kernel_size=1)
-        self.final_convs_class = [nn.Conv2d(int(64 * n_channels_factor), n_classes, kernel_size=1) for i in range(out_channels)]
 
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
         self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
 
         # Make a land mask tensor that is the same shape as the output tensor
-        self.land_mask = self.create_land_mask(spatial_shape).to(device)
+        land_mask = self.create_land_mask(spatial_shape)
+        self.register_buffer("land_mask", land_mask)
     
     def create_land_mask(self, spatial_shape):
-        land_mask_npy = ~xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/land_mask.nc").mask.data
-        n_y, n_x = land_mask_npy.shape
-        pad_y = spatial_shape[0] - n_y
-        pad_x = spatial_shape[1] - n_x
-        land_mask_npy = np.pad(land_mask_npy, ((pad_y//2, pad_y//2), (pad_x//2, pad_x//2)), mode='constant', constant_values=0)
-        
+        ds = xr.open_dataset("/scratch/users/yucli/cesm_data/temp/temp_member_00.nc").isel(time=0)
+        land_mask_npy = ~np.isnan(ds.temp).values       
+
         return torch.from_numpy(land_mask_npy).unsqueeze(0).repeat(6, 1, 1)
         
     def conv_block(self, in_channels, out_channels, filter_size):
@@ -184,9 +179,6 @@ class UNetRes3(nn.Module):
             nn.ReLU(inplace=True),
             nn.BatchNorm2d(out_channels)
         )
-
-    def set_temperature(self, T):
-        self.T = T
     
     def conv(self, in_channels, out_channels, filter_size):
         return nn.Sequential(
@@ -217,39 +209,13 @@ class UNetRes3(nn.Module):
         dec1 = self.decoder1_conv_2(dec1)
         dec1 = self.decoder1_conv_2(dec1)
 
-        if self.mode == "regression":
-            if self.predict_anomalies:
-                # Mapping to (-1, 1)
-                output = torch.tanh(self.final_conv_reg(dec1))
+        # Mapping to (-1, 1)
+        output = torch.tanh(self.final_conv_reg(dec1))
 
-                ##########################################################################
-                # Since getting exactly 0 after tanh requires an input of 0, this clipping
-                # can help the model when it gets "close enough" since there are a lot of
-                # zero values in the truth 
-                #
-                # By default, epsilon is set to 0.01, which is below the typical margin of
-                # error for sea ice concentration products
-                ##########################################################################
-                if self.clip_near_zero_anomalies:
-                    output = output.where(output.abs() > self.epsilon, 0)
-            else: 
-                # Mapping to (0, 1)
-                output = torch.sigmoid(self.final_conv_reg(dec1))
-            
-            # Apply the land mask
-            output = output * self.land_mask
+        if self.clip_near_zero_values:
+            output = output.where(output.abs() > self.epsilon, 0)
 
-        elif self.mode == "classification": 
-            final_logits = torch.stack([self.final_convs_class[i](dec1) for i in range(out_channels)], dim=2)
-            final_logits = final_logits.view(-1, 6, 3, spatial_shape[0], spatial_shape[1])
-            final_logits = final_logits / self.T  # Apply temperature scaling
-            output = F.softmax(final_logits, dim=2)  
-
-            land_mask = self.land_mask.unsqueeze(2)  # Add a class dimension
-            output = output * land_mask
-
-            # for the no sea ice class, the land should be automatically assigned probability 1  
-            output[:, :, 0, :, :] += (~land_mask[:, :, 0, :, :])
+        output = output * self.land_mask
 
         return output
 
