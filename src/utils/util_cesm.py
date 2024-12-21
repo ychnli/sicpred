@@ -4,11 +4,19 @@ import numpy as np
 import pandas as pd
 import time
 
-from src import util_era5
+from src.utils import util_era5
 from src import config_cesm as config
-from src.util_era5 import write_nc_file
+from src.utils.util_era5 import write_nc_file
 
-VAR_NAMES = config.VAR_NAMES
+ALL_VAR_NAMES = config.ALL_VAR_NAMES
+
+
+def load_config(config_path):
+    spec = importlib.util.spec_from_file_location("config", config_path)
+    config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config)
+    return config
+
 
 def find_downloaded_vars():
     """
@@ -19,10 +27,10 @@ def find_downloaded_vars():
 
     """
 
-    member_ids = np.empty((len(VAR_NAMES), 100), dtype='object')
+    member_ids = np.empty((len(ALL_VAR_NAMES), 100), dtype='object')
     n_members = []
 
-    for i,variable in enumerate(VAR_NAMES):
+    for i,variable in enumerate(ALL_VAR_NAMES):
         directory = os.path.join(config.RAW_DATA_DIRECTORY, variable)
         
         if os.path.exists(directory):
@@ -65,31 +73,22 @@ def normalize(x, m, s, var_name=None):
     return normalized
 
 
-def normalize_data(var_name, normalization_scheme, 
+def normalize_data(var_name, data_split_settings, max_lead_months=6,
                     overwrite=False, verbose=1, divide_by_stdev=True):
     """ 
     Normalize inputs based on statistics of the training data and save. 
 
-    TODO: implement normalization_scheme (a dict with args to customize how we normalize the dataset).
-    Want to be able to set e.g., different time range or a set of ensemble members over which to compute 
-    the normalization. Should also add metadata to the saved files that retains how the normalization was
-    computed. 
-
     Param:
         (string)    var_name: the standard name of the variable
-        (dict)      normaliation_scheme: a dict of settings for normalization (not implemented yet)
+        (dict)      normaliation_scheme: a dict specifying how the data is split 
         (bool)      overwrite 
         (int)       verbose  
         (bool)      divide_by_stdev: if True, computes (x - mu)/(sigma)
                                      if False, computes (x - mu)  
     """
 
-    save_dir = os.path.join(config.RAW_DATA_DIRECTORY, "normalized_inputs")
-
-    if divide_by_stdev:
-        save_path = os.path.join(save_dir, f"{var_name}_norm.nc")
-    else: 
-        save_path = os.path.join(save_dir, f"{var_name}_anom.nc")
+    save_dir = os.path.join(config.PROCESSED_DATA_DIRECTORY, "normalized_inputs", data_split_settings["name"])
+    save_path = os.path.join(save_dir, f"{var_name}_norm.nc")
         
     if os.path.exists(save_path) and not overwrite:
         if verbose >= 1: print(f"Already found normalized file for {var_name}. Skipping...")
@@ -99,32 +98,50 @@ def normalize_data(var_name, normalization_scheme,
 
     # First make a merged dataset from the separate ones 
     file_list = sorted(os.listdir(f"{config.RAW_DATA_DIRECTORY}/{var_name}"))
-    if f"{var_name}_combined.nc" in file_list: file_list.remove(f"{var_name}_combined.nc")
+    if f"{var_name}_combined.nc" in file_list: 
+        if overwrite: 
+            file_list.remove(f"{var_name}_combined.nc")
+        else: 
+            merged_ds = xr.open_dataset(os.path.join(config.RAW_DATA_DIRECTORY, f"{var_name}/{var_name}_combined.nc"))
+    else: 
+        ds_list = []
 
-    ds_list = []
+        for file in file_list:
+            ds = xr.open_dataset(os.path.join(f"{config.RAW_DATA_DIRECTORY}/{var_name}", file), chunks={'time': 120})
+            # change the time index to pandas instead of cftime
+            ds = ds.assign_coords(time=pd.date_range("1850-01", "2100-12", freq="MS"))
+            ds_list.append(ds)
 
-    for file in file_list:
-        ds = xr.open_dataset(os.path.join(f"{config.RAW_DATA_DIRECTORY}/{var_name}", file), chunks={'time': 120})
-        # change the time index to pandas instead of cftime
-        ds = ds.assign_coords(time=pd.date_range("1850-01", "2100-12", freq="MS"))
-        ds_list.append(ds)
-
-    merged_ds = xr.concat(ds_list, dim="member_id")
-
-    # save the merged ds before normalizing 
-    write_nc_file(merged_ds, f"{config.RAW_DATA_DIRECTORY}/{var_name}/{var_name}_combined.nc", overwrite)
+        merged_ds = xr.concat(ds_list, dim="member_id")
     
-    # now calculate the climatology. We define this as the period from 1850 to 1980 
-    # across all ensemble members. This means that the climate change signal, especially
-    # for the ssp simulations, will be present. 
+        # save the merged ds before normalizing 
+        write_nc_file(merged_ds, f"{config.RAW_DATA_DIRECTORY}/{var_name}/{var_name}_combined.nc", overwrite)
+    
+    # create a subsetted DataArray that contains the data requested by data_split_settings
     da = merged_ds[var_name]
-    time_subset = pd.date_range("1850-01", "1979-12", freq="MS")
+
+    if data_split_settings["split_by"] == "time": 
+        all_times = data_split_settings["train"].union(data_split_settings["val"]).union(data_split_settings["test"])
+
+        # this adds an extension of max_lead_months since we potentially need the normalized sea ice
+        # for constructing the labels 
+        all_times = all_times.union(pd.date_range(all_times[-1], all_times_[-1] + pd.DateOffset(months=max_lead_months), freq="MS"))
+        da = da.sel(time=all_times) 
+        da_train_subset = da.sel(time=data_split_settings["train"])
+
+    elif data_split_settings["split_by"] == "ensemble_member": 
+        all_member_ids = data_split_settings["train"].union(data_split_settings["val"]).union(data_split_settings["test"])
+        da = da.sel(member_id=all_member_ids) 
+        da_train_subset = da.sel(member_id=data_split_settings["train"])
+        
+    else:
+        raise ValueError("data_split_settings split_by must be 'time' or 'ensemble_member'")
 
     if divide_by_stdev:
         print("calculating means and stdev...", end=" ")
 
-        monthly_means = da.sel(time=time_subset).groupby("time.month").mean(dim=("time", "member_id")).load()
-        monthly_stdevs = da.sel(time=time_subset).groupby("time.month").std(dim=("time", "member_id")).load()
+        monthly_means = da_train_subset.groupby("time.month").mean(dim=("time", "member_id")).load()
+        monthly_stdevs = da_train_subset.groupby("time.month").std(dim=("time", "member_id")).load()
         print("done!")
 
         months = da['time'].dt.month
@@ -177,16 +194,11 @@ def load_inputs_data_da_dict(input_config, normalization_scheme=None):
 
     data_da_dict = {}
 
-    for var in VAR_NAMES: 
+    for var in ALL_VAR_NAMES: 
         if not input_config[var]["include"]:
             continue
 
-        if input_config[var]["divide_by_stdev"]:
-            norm = "norm"
-        else: 
-            norm = "anom"
-
-        ds = xr.open_dataset(f"{config.RAW_DATA_DIRECTORY}/normalized_inputs/{var}_{norm}.nc", chunks={"member_id": 1})
+        ds = xr.open_dataset(f"{config.RAW_DATA_DIRECTORY}/normalized_inputs/{var}_norm.nc", chunks={"member_id": 1})
 
         data_da_dict[var] = ds[var]
 
@@ -306,7 +318,7 @@ def save_inputs_files(input_config, save_path):
         print(f"done! Elapsed time: {end_time - start_time:.2f} seconds")
 
 
-def save_targets_files(input_config, target_config, save_path):
+def save_targets_files(input_config, target_config, save_path, max_lead_months):
     """
     Writes a model-ready targets file (.nc) for each ensemble member to save_path
     
@@ -319,10 +331,6 @@ def save_targets_files(input_config, target_config, save_path):
     if not target_config["predict_anom"]:
         raise NotImplementedError()
     else:
-        if input_config["icefrac"]["divide_by_stdev"]:
-            norm = "norm"
-        else: 
-            norm = "anom"
 
         input_da_dict = load_inputs_data_da_dict(input_config)
         da = input_da_dict["icefrac"]
@@ -339,7 +347,7 @@ def save_targets_files(input_config, target_config, save_path):
 
             for start_prediction_month in input_config["start_prediction_months"]:
                 prediction_target_months = pd.date_range(start_prediction_month, 
-                                                        start_prediction_month + pd.DateOffset(months=config.MAX_LEAD_MONTHS-1), 
+                                                        start_prediction_month + pd.DateOffset(months=max_lead_months-1), 
                                                         freq="MS")
                 
                 target_data = da.sel(time=prediction_target_months, member_id=member_id)
