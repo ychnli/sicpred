@@ -1,3 +1,7 @@
+"""
+This is a template for an experiment configuration file.
+"""
+
 import pandas as pd
 
 ################################ description ################################
@@ -82,12 +86,3 @@ INPUT_CONFIG = {
 TARGET_CONFIG = {
     "predict_anom": True
 }
-
-
-# model configurations
-MODEL 
-
-# training configurations 
-LEARNING_RATE
-BATCH_SIZE
-NUM_EPOCHS
