@@ -5,6 +5,7 @@
 ######################################################################
 
 import os 
+import pprint
 import argparse
 import importlib
 from src.utils import util_cesm
@@ -25,8 +26,15 @@ def main():
     # load the config variables
     config = load_config(args.config)
 
+    # create directories for saving processed data
+    os.makedirs(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", config.DATA_CONFIG_NAME), exist_ok=True)
+    os.makedirs(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.DATA_CONFIG_NAME), exist_ok=True)
+
     # Normalize 
-    print("Normalizing data... \n")
+    print("Normalizing data according to the following data_split_settings:")
+    pprint.pprint(config.DATA_SPLIT_SETTINGS)
+    print("\n")
+
     for var_name in config.INPUT_CONFIG.keys():
         if config.INPUT_CONFIG[var_name]['norm']:
             divide_by_stdev = config.INPUT_CONFIG[var_name]['divide_by_stdev']
@@ -37,7 +45,7 @@ def main():
 
     # Prepare model-ready data pairs (concatenate stuff) 
     print("Prepping model-ready data pairs... \n")
-    model_data_save_path = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, f"data_pairs_{config.DATA_CONFIG_NAME}")
+    model_data_save_path = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.DATA_CONFIG_NAME)
     os.makedirs(model_data_save_path, exist_ok=True)
 
     util_cesm.save_inputs_files(config.INPUT_CONFIG, model_data_save_path, config.DATA_SPLIT_SETTINGS)

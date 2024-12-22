@@ -138,7 +138,7 @@ class UNetRes3(nn.Module):
                 epsilon=0.01):
 
         super(UNetRes3, self).__init__()
-        self.clip_near_zero_values = True
+        self.clip_near_zero_values = clip_near_zero_values
         self.epsilon = epsilon 
 
         self.encoder1 = self.conv_block(in_channels, int(64 * n_channels_factor), filter_size)
