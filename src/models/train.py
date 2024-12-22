@@ -10,7 +10,7 @@ from tqdm import tqdm
 import argparse 
 import importlib.util
 
-from src.models.models_util import CESM_Dataloader
+from src.models.models_util import CESM_Dataset
 from src.models.models import UNetRes3
 
 
@@ -19,19 +19,6 @@ def load_config(config_path):
     config = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(config)
     return config
-
-
-def validate_config(config):
-    required_attributes = ["model", 
-                            "learning_rate",
-                            "batch_size",
-                            "epochs",
-                            "early_stopping",
-                            ""]
-                            
-    for attr in required_attributes:
-        if not hasattr(config, attr):
-            raise AttributeError(f"Missing required config attribute: {attr}")
 
 
 def train_epoch(model, dataloader, optimizer, loss_fn, device, epoch, total_epochs):
@@ -70,6 +57,7 @@ def validate_epoch(model, dataloader, loss_fn, device, epoch, total_epochs):
     
     return epoch_loss / len(dataloader)
 
+
 def main():
     parser = argparse.ArgumentParser(description="Train a model with specified config.")
     parser.add_argument("--config", type=str, required=True, help="Path to the configuration file (e.g., config.py)")
@@ -83,18 +71,11 @@ def main():
                notes=config.notes)
 
     # Data split settings
-    data_split_settings = {
-        "split_by": "time",
-        "train": pd.date_range("1851-01", "1979-12", freq="MS"),
-        "val": pd.date_range("1980-01", "1994-12", freq="MS"),
-        "test": pd.date_range("1995-01", "2013-12", freq="MS")
-    }
-
     data_dir = "/scratch/users/yucli/model-ready_cesm_data/data_pairs_setting1"
     ensemble_members = np.unique([name.split("_")[2].split(".")[0] for name in os.listdir(data_dir)])[0:5]
 
-    train_dataset = CESM_SeaIceDataset(data_dir, ensemble_members, "train", data_split_settings)
-    val_dataset = CESM_SeaIceDataset(data_dir, ensemble_members, "val", data_split_settings)
+    train_dataset = CESM_Dataset(data_dir, ensemble_members, "train", data_split_settings)
+    val_dataset = CESM_Dataset(data_dir, ensemble_members, "val", data_split_settings)
 
     train_dataloader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=2)
     val_dataloader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=2)

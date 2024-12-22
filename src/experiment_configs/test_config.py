@@ -13,7 +13,7 @@ NOTES = ""
 
 MAX_LEAD_MONTHS = 6
 
-DATA_CONFIG_NAME = "icefrac+temp_time"
+DATA_CONFIG_NAME = "simple-inputs_small-dataset"
 
 """
 data_split_settings should be a dict with keys split_by, train, val, and test
@@ -29,13 +29,13 @@ and you should specify the time range to use
 """
 
 DATA_SPLIT_SETTINGS = {
-    "name": "",
-    "split_by": "time",
-    "train": pd.date_range("1851-01", "1979-12", freq="MS"),
-    "val": pd.date_range("1980-01", "1994-12", freq="MS"),
-    "test": pd.date_range("1995-01", "2013-12", freq="MS"),
-    "time_range": None,
-    "member_ids": [""]
+    "name": DATA_CONFIG_NAME, 
+    "split_by": "ensemble_member",
+    "train": ["r10i1181p1f1", "r10i1231p1f1", "r10i1251p1f1", "r10i1281p1f1", "r2i1231p1f1"], 
+    "val": ["r2i1021p1f1"],
+    "test": ["r2i1301p1f1"],
+    "time_range": pd.date_range("1851-01", "2013-12", freq="MS"),
+    "member_ids": None
 }
 
 
@@ -45,7 +45,7 @@ INPUT_CONFIG = {
         'divide_by_stdev': False, 'auxiliary': False
     }, 
     'icethick': {
-        'include': True, 'norm': True, 'land_mask': True, 'lag': 12, 
+        'include': False, 'norm': True, 'land_mask': True, 'lag': 12, 
         'divide_by_stdev': False, 'auxiliary': False
     }, 
     'temp': {
@@ -53,23 +53,23 @@ INPUT_CONFIG = {
         'divide_by_stdev': True, 'auxiliary': False
     }, 
     'geopotential': {
-        'include': True, 'norm': True, 'land_mask': False, 'lag': 6, 
+        'include': False, 'norm': True, 'land_mask': False, 'lag': 6, 
         'divide_by_stdev': True, 'auxiliary': False
     }, 
     'psl': {
-        'include': True, 'norm': True, 'land_mask': False, 'lag': 6, 
+        'include': False, 'norm': True, 'land_mask': False, 'lag': 6, 
         'divide_by_stdev': True, 'auxiliary': False
     }, 
     'lw_flux': {
-        'include': True, 'norm': True, 'land_mask': False, 'lag': 3, 
+        'include': False, 'norm': True, 'land_mask': False, 'lag': 3, 
         'divide_by_stdev': True, 'auxiliary': False
     }, 
     'sw_flux': {
-        'include': True, 'norm': True, 'land_mask': False, 'lag': 3, 
+        'include': False, 'norm': True, 'land_mask': False, 'lag': 3, 
         'divide_by_stdev': True, 'auxiliary': False
     }, 
     'ua': {
-        'include': True, 'norm': True, 'land_mask': False, 'lag': 3, 
+        'include': False, 'norm': True, 'land_mask': False, 'lag': 3, 
         'divide_by_stdev': True, 'auxiliary': False
     }, 
     'cosine_of_init_month': {
@@ -86,3 +86,12 @@ INPUT_CONFIG = {
 TARGET_CONFIG = {
     "predict_anom": True
 }
+
+
+############################### model configs ###############################
+MODEL = None
+
+############################# training configs ##############################
+LEARNING_RATE = None
+BATCH_SIZE = None
+NUM_EPOCHS = None

@@ -15,13 +15,14 @@ import torch.nn.functional as F
 
 from src.utils import util_era5
 from src import config
+from src import config_cesm
 
 ##########################################################################################
 # Model utils
 ##########################################################################################
 
-class CESM_Dataloader(torch.utils.data.Dataset):
-    def __init__(self, data_dir, ensemble_members, split, data_split_settings):
+class CESM_Dataset(torch.utils.data.Dataset):
+    def __init__(self, split, data_split_settings):
         """
         Param:
             (string)        data_dir (preprocessed model-ready data)
@@ -29,26 +30,45 @@ class CESM_Dataloader(torch.utils.data.Dataset):
             (string)        split ('test', 'val', or 'train')
             (dict)          data_split_settings
             (callable)      optional transform
+
+        DATA_SPLIT_SETTINGS = {
+            "name": DATA_CONFIG_NAME, 
+            "split_by": "ensemble_member",
+            "train": ["r10i1181p1f1", "r10i1231p1f1", "r10i1251p1f1", "r10i1281p1f1", "r2i1231p1f1"], 
+            "val": ["r2i1021p1f1"],
+            "test": ["r2i1301p1f1"],
+            "time_range": pd.date_range("1851-01", "2013-12", freq="MS"),
+            "member_ids": None
+        }
         """
 
-        self.data_dir = data_dir
-        self.ensemble_members = ensemble_members
+        self.data_dir = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", data_split_settings["name"])
         self.split = split
-        self.transform = transform
 
         # Extract split settings
-        self.split_by = data_split_settings["split_by"]  # 'time' in this case
-        self.split_range = data_split_settings[split]   # Date range for the requested split
+        self.split_by = data_split_settings["split_by"]
+        self.split_range = data_split_settings[split]
 
         # Build a global index of samples
         self.samples = []
-        for member_id in ensemble_members:
-            input_file = os.path.join(data_dir, f"inputs_member_{member_id}.nc")
-            with xr.open_dataset(input_file) as ds:
+        if split_by == "time": 
+            for member_id in data_split_settings["member_ids"]:
+                input_file = os.path.join(data_dir, f"inputs_member_{member_id}.nc")
+                ds = xr.open_dataset(input_file) 
+
                 time_values = ds["start_prediction_month"].values
                 for start_idx, time_val in enumerate(time_values):
-                    # Only include samples within the specified date range for the split
                     if time_val in self.split_range:
+                        self.samples.append((member_id, time_val, start_idx))
+
+        elif split_by == "ensemble_member":
+            for member_id in split_range: 
+                input_file = os.path.join(data_dir, f"inputs_member_{member_id}.nc")
+                ds = xr.open_dataset(input_file) 
+
+                time_values = ds["start_prediction_month"].values
+                for start_idx, time_val in enumerate(time_values):
+                    if time_val in data_split_settings["time_range"]:
                         self.samples.append((member_id, time_val, start_idx))
 
     def __len__(self):
@@ -83,7 +103,7 @@ class CESM_Dataloader(torch.utils.data.Dataset):
         return sample
 
 
-class Obs_Dataloader(torch.utils.data.Dataset):
+class Obs_Dataset(torch.utils.data.Dataset):
     def __init__(self, data_directory, configuration, split_array, start_prediction_months, \
                 split_type='train', target_shape=(336, 320), mode="regression", class_splits=None):
         self.data_directory = data_directory

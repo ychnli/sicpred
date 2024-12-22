@@ -5,10 +5,15 @@ import pandas as pd
 import time
 
 from src import config_cesm as config
-from src.utils.util_era5 import write_nc_file
+from src.utils.util_shared import write_nc_file
 
 ALL_VAR_NAMES = config.ALL_VAR_NAMES
 
+def check_valid_data_split_settings(data_split_settings):
+    ### TODO: check that data_split_settings is valid 
+
+    return None
+    
 
 def find_downloaded_vars():
     """
@@ -137,7 +142,7 @@ def normalize_data(var_name, data_split_settings, max_lead_months=6,
         da_train_subset = da.sel(time=data_split_settings["train"], member_id=data_split_settings["member_ids"])
 
     elif data_split_settings["split_by"] == "ensemble_member": 
-        all_member_ids = data_split_settings["train"].union(data_split_settings["val"]).union(data_split_settings["test"])
+        all_member_ids = data_split_settings["train"] + data_split_settings["val"] + data_split_settings["test"]
         da = da.sel(member_id=all_member_ids) 
         da_train_subset = da.sel(member_id=data_split_settings["train"], time=data_split_settings["time_range"])
         
