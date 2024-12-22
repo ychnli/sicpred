@@ -7,7 +7,6 @@ import os
 import pickle
 from netCDF4 import Dataset
 import h5py
-import matplotlib.pyplot as plt
 
 from src.models import linear_trend
 

@@ -2,15 +2,13 @@
 # This script normalizes the CESM data and then concatenates the data
 # into model-ready data pairs and saves them. 
 #
-# TODO: implement a way to specify how to normalize the data 
-# and thereby run different experiments 
 ######################################################################
 
 import os 
 import argparse
 import importlib
 from src.utils import util_cesm
-
+from src import config_cesm
 
 def load_config(config_path):
     spec = importlib.util.spec_from_file_location("config", config_path)
@@ -29,23 +27,23 @@ def main():
 
     # Normalize 
     print("Normalizing data... \n")
-    vars_to_normalize = config.VAR_NAMES
-    for var_name in vars_to_normalize:
-        if var_name in ["icefrac", "icethick"]:
-            divide_by_stdev = False
-        else: 
-            divide_by_stdev = True
-            
-        util_cesm.normalize_data(var_name, normalization_scheme=None, 
-                                overwrite=False, verbose=2, divide_by_stdev=divide_by_stdev)
+    for var_name in config.INPUT_CONFIG.keys():
+        if config.INPUT_CONFIG[var_name]['norm']:
+            divide_by_stdev = config.INPUT_CONFIG[var_name]['divide_by_stdev']
+            util_cesm.normalize_data(var_name, config.DATA_SPLIT_SETTINGS, max_lead_months=config.MAX_LEAD_MONTHS,
+                                    overwrite=False, verbose=2, divide_by_stdev=divide_by_stdev)
+
     print("done! \n\n")
 
     # Prepare model-ready data pairs (concatenate stuff) 
     print("Prepping model-ready data pairs... \n")
-    model_data_save_path = os.path.join(config_cesm.MODEL_DATA_DIRECTORY, "data_pairs_setting1")
+    model_data_save_path = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, f"data_pairs_{config.DATA_CONFIG_NAME}")
     os.makedirs(model_data_save_path, exist_ok=True)
-    util_cesm.save_inputs_files(config_cesm.input_config_all, model_data_save_path)
-    util_cesm.save_targets_files(config_cesm.input_config_all, config_cesm.target_config, model_data_save_path)
+
+    util_cesm.save_inputs_files(config.INPUT_CONFIG, model_data_save_path, config.DATA_SPLIT_SETTINGS)
+
+    util_cesm.save_targets_files(config.INPUT_CONFIG, config.TARGET_CONFIG, model_data_save_path,
+                                 config.MAX_LEAD_MONTHS, config.DATA_SPLIT_SETTINGS)
     print("all done! \n\n")
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 """ 
-global configurations for the CESM dataset 
+Global configurations for the CESM dataset 
 """
 
 
@@ -9,6 +9,6 @@ RAW_DATA_DIRECTORY = '/scratch/users/yucli/cesm_data'
 
 PROCESSED_DATA_DIRECTORY = 'scratch/users/yucli/cesm_data_processed'
 
-# renamed 
+# all renamed variables 
 ALL_VAR_NAMES = ["icefrac", "icethick", "temp", "geopotential", "psl", "lw_flux", "sw_flux", "ua"]
 

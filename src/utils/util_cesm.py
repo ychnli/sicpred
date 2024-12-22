@@ -4,18 +4,10 @@ import numpy as np
 import pandas as pd
 import time
 
-from src.utils import util_era5
 from src import config_cesm as config
 from src.utils.util_era5 import write_nc_file
 
 ALL_VAR_NAMES = config.ALL_VAR_NAMES
-
-
-def load_config(config_path):
-    spec = importlib.util.spec_from_file_location("config", config_path)
-    config = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(config)
-    return config
 
 
 def find_downloaded_vars():
@@ -73,6 +65,21 @@ def normalize(x, m, s, var_name=None):
     return normalized
 
 
+def get_start_prediction_months(data_split_settings):
+    """
+    Get the start prediction months for the data split settings. 
+    """
+
+    if data_split_settings["split_by"] == "time":
+        start_prediction_months = data_split_settings["train"].union(data_split_settings["val"]).union(data_split_settings["test"])
+    elif data_split_settings["split_by"] == "ensemble_member":
+        start_prediction_months = data_split_settings["time_range"]
+    else:
+        raise ValueError("data_split_settings split_by must be 'time' or 'ensemble_member'")
+
+    return start_prediction_months
+
+
 def normalize_data(var_name, data_split_settings, max_lead_months=6,
                     overwrite=False, verbose=1, divide_by_stdev=True):
     """ 
@@ -121,18 +128,18 @@ def normalize_data(var_name, data_split_settings, max_lead_months=6,
     da = merged_ds[var_name]
 
     if data_split_settings["split_by"] == "time": 
-        all_times = data_split_settings["train"].union(data_split_settings["val"]).union(data_split_settings["test"])
+        all_times = get_start_prediction_months(data_split_settings)
 
         # this adds an extension of max_lead_months since we potentially need the normalized sea ice
         # for constructing the labels 
-        all_times = all_times.union(pd.date_range(all_times[-1], all_times_[-1] + pd.DateOffset(months=max_lead_months), freq="MS"))
+        all_times = all_times.union(pd.date_range(all_times[-1], all_times[-1] + pd.DateOffset(months=max_lead_months), freq="MS"))
         da = da.sel(time=all_times) 
-        da_train_subset = da.sel(time=data_split_settings["train"])
+        da_train_subset = da.sel(time=data_split_settings["train"], member_id=data_split_settings["member_ids"])
 
     elif data_split_settings["split_by"] == "ensemble_member": 
         all_member_ids = data_split_settings["train"].union(data_split_settings["val"]).union(data_split_settings["test"])
         da = da.sel(member_id=all_member_ids) 
-        da_train_subset = da.sel(member_id=data_split_settings["train"])
+        da_train_subset = da.sel(member_id=data_split_settings["train"], time=data_split_settings["time_range"])
         
     else:
         raise ValueError("data_split_settings split_by must be 'time' or 'ensemble_member'")
@@ -160,7 +167,7 @@ def normalize_data(var_name, data_split_settings, max_lead_months=6,
         monthly_stdevs_ds = monthly_stdevs.to_dataset(name=var_name)
     else: 
         print("calculating means...", end=" ")
-        monthly_means = da.sel(time=time_subset).groupby("time.month").mean(dim=("time", "member_id")).load()
+        monthly_means = da_train_subset.groupby("time.month").mean(dim=("time", "member_id")).load()
         print("done!")
 
         months = da['time'].dt.month
@@ -181,11 +188,11 @@ def normalize_data(var_name, data_split_settings, max_lead_months=6,
 
 
 
-def load_inputs_data_da_dict(input_config, normalization_scheme=None):
+def load_inputs_data_da_dict(input_config, data_split_settings):
     """
     Param:
         (dict)      input_config
-        (dict)      TODO: normalization_scheme (currently does nothing)
+        (dict)      data_split_settings 
 
     Returns:
         (dict)      dictionary of xr.DataArray of normalized inputs, with 
@@ -194,15 +201,17 @@ def load_inputs_data_da_dict(input_config, normalization_scheme=None):
 
     data_da_dict = {}
 
+    dir = os.path.join(config.PROCESSED_DATA_DIRECTORY, "normalized_inputs", data_split_settings["name"])
+
     for var in ALL_VAR_NAMES: 
-        if not input_config[var]["include"]:
+        if var not in input_config.keys() or not input_config[var]["include"]:
             continue
 
-        ds = xr.open_dataset(f"{config.RAW_DATA_DIRECTORY}/normalized_inputs/{var}_norm.nc", chunks={"member_id": 1})
+        ds = xr.open_dataset(os.path.join(dir, f"{var}_norm.nc"), chunks={"member_id": 1})
 
         data_da_dict[var] = ds[var]
 
-    # Get the common ensemble member_ids 
+    # make sure all the data arrays have the same member_ids 
     common_member_ids = set()
     for i,da in enumerate(data_da_dict.values()): 
         if i == 0: 
@@ -221,7 +230,7 @@ def load_inputs_data_da_dict(input_config, normalization_scheme=None):
 
 
 
-def save_inputs_files(input_config, save_path):
+def save_inputs_files(input_config, save_path, data_split_settings):
     """
     Writes a model-ready input file (.nc) for each ensemble member to save_path
 
@@ -230,7 +239,7 @@ def save_inputs_files(input_config, save_path):
         (string)    save_path
     """
     
-    data_da_dict = load_inputs_data_da_dict(input_config)
+    data_da_dict = load_inputs_data_da_dict(input_config, data_split_settings)
 
     # get some auxiliary data
     x_coords = data_da_dict["icefrac"].x.data
@@ -240,6 +249,7 @@ def save_inputs_files(input_config, save_path):
     
     # save each ensemble member separately so the files don't get too big 
     member_ids = data_da_dict["icefrac"].member_id.data
+    start_prediction_months = get_start_prediction_months(data_split_settings)
     for member_id in member_ids:
         save_name = os.path.join(save_path, f"inputs_member_{member_id}.nc")
         if os.path.exists(save_name):
@@ -248,14 +258,11 @@ def save_inputs_files(input_config, save_path):
         print(f"Concatenating data into model input format for member {member_id}...")
         start_time = time.time()
         member_da_list = [] # we will concat this later 
-
-        for start_prediction_month in input_config["start_prediction_months"]:
+        
+        for start_prediction_month in start_prediction_months:
 
             time_da_list = []
             for input_var, input_var_params in input_config.items():
-                if input_var in ["name", "start_prediction_months"]: 
-                    continue
-
                 if not input_var_params["include"]: 
                     continue 
                 
@@ -313,12 +320,13 @@ def save_inputs_files(input_config, save_path):
         
         print("done! Saving...")
         da_merged.to_dataset(name="data").to_netcdf(save_name)
+        da_merged.close()
 
         end_time = time.time()
         print(f"done! Elapsed time: {end_time - start_time:.2f} seconds")
 
 
-def save_targets_files(input_config, target_config, save_path, max_lead_months):
+def save_targets_files(input_config, target_config, save_path, max_lead_months, data_split_settings):
     """
     Writes a model-ready targets file (.nc) for each ensemble member to save_path
     
@@ -326,52 +334,56 @@ def save_targets_files(input_config, target_config, save_path, max_lead_months):
         (dict)      input_config
         (dict)      target_config
         (string)    save_path
+        (int)       max_lead_months
+        (dict)      data_split_settings
     """
 
     if not target_config["predict_anom"]:
-        raise NotImplementedError()
+        ds = xr.open_dataset(os.path.join(config.RAW_DATA_DIRECTORY, "icefrac/icefrac_combined.nc"))
+        da = ds["icefrac"] 
     else:
-
-        input_da_dict = load_inputs_data_da_dict(input_config)
+        input_da_dict = load_inputs_data_da_dict(input_config, data_split_settings)
         da = input_da_dict["icefrac"]
 
-        member_ids = da.member_id.data
-        for member_id in member_ids:
-            save_name = os.path.join(save_path, f"targets_member_{member_id}.nc")
-            if os.path.exists(save_name):
-                continue
+    member_ids = da.member_id.data
 
-            print(f"Concatenating ground-truth data into model output format for member {member_id}...")
-            start_time = time.time()
-            time_da_list = []
+    start_prediction_months = get_start_prediction_months(data_split_settings)
+    for member_id in member_ids:
+        save_name = os.path.join(save_path, f"targets_member_{member_id}.nc")
+        if os.path.exists(save_name):
+            continue
 
-            for start_prediction_month in input_config["start_prediction_months"]:
-                prediction_target_months = pd.date_range(start_prediction_month, 
-                                                        start_prediction_month + pd.DateOffset(months=max_lead_months-1), 
-                                                        freq="MS")
-                
-                target_data = da.sel(time=prediction_target_months, member_id=member_id)
+        print(f"Concatenating ground-truth data into model output format for member {member_id}...")
+        start_time = time.time()
+        time_da_list = []
 
-                # mask out nans
-                target_data = target_data.fillna(0)
-
-                target_data = target_data.assign_coords(time=np.arange(1,7))
-                target_data = target_data.rename({"time": "lead_time"}) 
-
-                # add a coordinate to denote the start prediction month (time origin)
-                target_data = target_data.assign_coords(start_prediction_month=start_prediction_month)
-
-                time_da_list.append(target_data)
-
-            da_merged = xr.concat(time_da_list, dim="start_prediction_month", coords='minimal', compat='override')
-
-            da_merged = da_merged.chunk(chunks={"start_prediction_month":12, "lead_time":-1})
+        for start_prediction_month in start_prediction_months:
+            prediction_target_months = pd.date_range(start_prediction_month, 
+                                                    start_prediction_month + pd.DateOffset(months=max_lead_months-1), 
+                                                    freq="MS")
             
-            print("done! Saving...")
-            da_merged.to_dataset(name="data").to_netcdf(save_name)
-            
-            end_time = time.time()
-            print(f"done! Elapsed time: {end_time - start_time:.2f} seconds")
-            da_merged.to_dataset(name="data").to_netcdf(save_name)
+            target_data = da.sel(time=prediction_target_months, member_id=member_id)
+
+            # mask out nans
+            target_data = target_data.fillna(0)
+
+            target_data = target_data.assign_coords(time=np.arange(1,7))
+            target_data = target_data.rename({"time": "lead_time"}) 
+
+            # add a coordinate to denote the start prediction month (time origin)
+            target_data = target_data.assign_coords(start_prediction_month=start_prediction_month)
+
+            time_da_list.append(target_data)
+
+        da_merged = xr.concat(time_da_list, dim="start_prediction_month", coords='minimal', compat='override')
+
+        da_merged = da_merged.chunk(chunks={"start_prediction_month":12, "lead_time":-1})
+        
+        print("done! Saving...")
+        da_merged.to_dataset(name="data").to_netcdf(save_name)
+        da_merged.close()
+
+        end_time = time.time()
+        print(f"done! Elapsed time: {end_time - start_time:.2f} seconds")
 
 
