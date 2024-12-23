@@ -32,7 +32,7 @@ def main():
 
     # Normalize 
     print("Normalizing data according to the following data_split_settings:")
-    pprint.pprint(config.DATA_SPLIT_SETTINGS)
+    pprint.pprint(config.DATA_SPLIT_SETTINGS, sort_dicts=False)
     print("\n")
 
     for var_name in config.INPUT_CONFIG.keys():

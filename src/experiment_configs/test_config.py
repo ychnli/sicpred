@@ -5,9 +5,9 @@ This is a template for an experiment configuration file.
 import pandas as pd
 
 ################################ description ################################
-DATE = ""
 EXPERIMENT_NAME = ""
 NOTES = ""
+DATE = "" # optional 
 
 ################################ data configs ################################
 
@@ -84,14 +84,23 @@ INPUT_CONFIG = {
 }
 
 TARGET_CONFIG = {
-    "predict_anom": True
+    "predict_anom": True,
+    "predict_classes": False
 }
 
 
 ############################### model configs ###############################
-MODEL = None
+MODEL = "UNetRes3"
+LOSS_FUNCTION = "MSE" 
+LOSS_FUNCTION_ARGS = {
+    "use_weights": False, 
+    "use_area_weighting": True, 
+    "zero_class_weight": None, 
+}
 
 ############################# training configs ##############################
-LEARNING_RATE = None
-BATCH_SIZE = None
-NUM_EPOCHS = None
+LEARNING_RATE = 1e-4
+BATCH_SIZE = 64
+NUM_EPOCHS = 10
+CHECKPOINT_INTERVAL = 1
+
