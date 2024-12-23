@@ -14,6 +14,7 @@ from src.models.models_util import CESM_Dataset
 from src.models.models import UNetRes3
 from src.utils import util_cesm
 from src import config_cesm
+from src.models.losses import WeightedMSELoss
 
 
 def load_config(config_path):
@@ -92,8 +93,8 @@ def main():
     
     optimizer = Adam(model.parameters(), lr=config.LEARNING_RATE)
 
-    if config.LOSS == "MSE": 
-        loss_fn = MSELoss()
+    if config.LOSS_FUNCTION == "MSE": 
+        loss_fn = WeightedMSELoss(**config.LOSS_FUNCTION_ARGS)
     
     # Load a checkpoint if it exists
     save_dir = os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME)
