@@ -392,3 +392,39 @@ def save_targets_files(input_config, target_config, save_path, max_lead_months, 
         print(f"done! Elapsed time: {end_time - start_time:.2f} seconds")
 
 
+def get_num_input_channels(input_config):
+    """
+    Get the number of input channels from the input_config dict. 
+
+    Param:
+        (dict)      input_config
+
+    Returns:
+        (int)       num_channels
+    """
+
+    num_channels = 0
+    for _, var_params in input_config.items():
+        if var_params["include"]:
+            if var_params["auxiliary"]:
+                num_channels += 1
+            else:
+                num_channels += var_params["lag"]
+
+    return num_channels
+
+def get_num_output_channels(max_lead_months, target_config):
+    if not target_config["predict_classes"]:
+        return max_lead_months
+    else:
+        raise NotImplementedError()
+    
+
+def calculate_seasonal_ice_area_weights(data_split_settings):
+    file = os.path.join(config.PROCESSED_DATA_DIRECTORY, "normalized_inputs", data_split_settings["name"], "icefrac_mean.nc")
+    if os.path.exists(file):
+        ds = xr.open_dataset(file)
+        da = ds.icefrac
+
+        # calculate the total sea ice area for each month
+        ice_area = da.where(da > 0).count(dim=("x", "y"))
