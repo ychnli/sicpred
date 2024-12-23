@@ -31,15 +31,6 @@ class CESM_Dataset(torch.utils.data.Dataset):
             (dict)          data_split_settings
             (callable)      optional transform
 
-        DATA_SPLIT_SETTINGS = {
-            "name": DATA_CONFIG_NAME, 
-            "split_by": "ensemble_member",
-            "train": ["r10i1181p1f1", "r10i1231p1f1", "r10i1251p1f1", "r10i1281p1f1", "r2i1231p1f1"], 
-            "val": ["r2i1021p1f1"],
-            "test": ["r2i1301p1f1"],
-            "time_range": pd.date_range("1851-01", "2013-12", freq="MS"),
-            "member_ids": None
-        }
         """
 
         self.data_dir = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", data_split_settings["name"])
@@ -51,9 +42,9 @@ class CESM_Dataset(torch.utils.data.Dataset):
 
         # Build a global index of samples
         self.samples = []
-        if split_by == "time": 
+        if self.split_by == "time": 
             for member_id in data_split_settings["member_ids"]:
-                input_file = os.path.join(data_dir, f"inputs_member_{member_id}.nc")
+                input_file = os.path.join(self.data_dir, f"inputs_member_{member_id}.nc")
                 ds = xr.open_dataset(input_file) 
 
                 time_values = ds["start_prediction_month"].values
@@ -61,9 +52,9 @@ class CESM_Dataset(torch.utils.data.Dataset):
                     if time_val in self.split_range:
                         self.samples.append((member_id, time_val, start_idx))
 
-        elif split_by == "ensemble_member":
-            for member_id in split_range: 
-                input_file = os.path.join(data_dir, f"inputs_member_{member_id}.nc")
+        elif self.split_by == "ensemble_member":
+            for member_id in self.split_range: 
+                input_file = os.path.join(self.data_dir, f"inputs_member_{member_id}.nc")
                 ds = xr.open_dataset(input_file) 
 
                 time_values = ds["start_prediction_month"].values
