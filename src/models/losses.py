@@ -4,47 +4,52 @@ import numpy as np
 import os
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
 
 from src import config
 
-class MaskedMSELoss(nn.Module):
-    def __init__(self, device, use_weights=False, use_area_weighting=True, zero_class_weight=None, scale_factor=1):
-        super(MaskedMSELoss, self).__init__()
-        self.ice_mask = xr.open_dataset(f"{config.DATA_DIRECTORY}/NSIDC/monthly_ice_mask.nc").mask
-        self.latitude_weights = np.cos(np.deg2rad(config.SPS_GRID.latitude.values))
-        self.use_weights = use_weights
-        self.use_area_weighting = use_area_weighting
-        self.zero_class_weight = zero_class_weight
+class WeightedMSELoss(nn.Module):
+    """
+    Modification of standard MSE loss that allows for weighting by month and area
+    """
+
+    def __init__(self, device, 
+                 apply_month_weights=True,
+                 monthly_weights=None, 
+                 apply_area_weights=True, 
+                 area_weights=None,
+                 scale_factor=1):
+        
+        super(WeightedMSELoss, self).__init__()
+
+        if apply_month_weights:
+            assert area_weights is not None, "Area weights (same shape as output array) must be provided if area weighting is enabled"
+        
+        if apply_month_weights:
+            assert monthly_weights is not None, "Monthly weights (shape 12 array) must be provided if month weighting is enabled"
+
+        self.device = device
+        self.apply_month_weights = apply_month_weights
+        self.monthly_weights = monthly_weights
+        self.apply_area_weights = apply_area_weights
+        self.area_weights = area_weights
         self.scale_factor = scale_factor
 
-        # pad the latitude weights and convert it to tensor
-        self.latitude_weights = np.pad(self.latitude_weights, ((2,2), (2,2)), mode='constant', constant_values=0)
-        self.latitude_weights = torch.tensor(self.latitude_weights).to(device)
+    def forward(self, output, target, target_months):
+        diff = target - output # shape = (batch_size, n_channels, n_x, n_y)
 
-    def forward(self, outputs, targets, target_months):
-        n_active_cells = 0
-
-        for target_months_subset in target_months:
-            n_active_cells += self.ice_mask.sel(month=target_months_subset.cpu()).sum().values
+        if self.apply_month_weights:
+            for i, target_month in enumerate(target_months): 
+                diff[:, i, :, :] *= self.monthly_weights[target_month - 1]
         
-        # Punish predictions of sea ice in ice free zones 
-        diff = targets - outputs 
-        if self.use_area_weighting: 
-            # ignore padded regions
-            # maybe this code is better to be generalized for arbitrary padding but I don't think
-            # the padding will be much different 
-            diff = diff * self.latitude_weights
-
-        if self.use_weights:
-            weights = torch.where(targets == 0, self.zero_class_weight, 1)
-            loss = torch.sum(((diff) ** 2) * weights) / n_active_cells
-        else:
-            loss = torch.sum((diff) ** 2) / n_active_cells
+        if self.apply_area_weights:
+            diff *= self.area_weights 
         
-        return loss * self.scale_factor
+        loss = torch.mean(diff ** 2)
 
+        loss *= self.scale_factor
+
+        return loss
+        
 
 class CategoricalFocalLoss(nn.Module):
     """
