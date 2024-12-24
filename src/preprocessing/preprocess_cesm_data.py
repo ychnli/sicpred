@@ -36,7 +36,7 @@ def main():
     print("\n")
 
     for var_name in config.INPUT_CONFIG.keys():
-        if config.INPUT_CONFIG[var_name]['norm']:
+        if config.INPUT_CONFIG[var_name]['include'] and config.INPUT_CONFIG[var_name]['norm']:
             divide_by_stdev = config.INPUT_CONFIG[var_name]['divide_by_stdev']
             util_cesm.normalize_data(var_name, config.DATA_SPLIT_SETTINGS, max_lead_months=config.MAX_LEAD_MONTHS,
                                     overwrite=False, verbose=2, divide_by_stdev=divide_by_stdev)

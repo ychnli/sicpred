@@ -3,10 +3,14 @@ This is a template for an experiment configuration file.
 """
 
 import pandas as pd
+from src.utils import util_cesm 
 
 ################################ description ################################
-EXPERIMENT_NAME = ""
-NOTES = ""
+EXPERIMENT_NAME = "simple-inputs_small-dataset_predict-anom"
+NOTES = "A fairly simple test run with icefrac and temp, both up to lag 12 \
+    as inputs. Predict maps of icefrac anomalies. Using weighted loss function\
+    that has monthly weights given by softmax of the seasonal cycle and area \
+    weights given by the grid cell areas."
 DATE = "" # optional 
 
 ################################ data configs ################################
@@ -31,9 +35,10 @@ and you should specify the time range to use
 DATA_SPLIT_SETTINGS = {
     "name": DATA_CONFIG_NAME, 
     "split_by": "ensemble_member",
-    "train": ["r10i1181p1f1", "r10i1231p1f1", "r10i1251p1f1", "r10i1281p1f1", "r2i1231p1f1"], 
+    "train": ["r10i1181p1f1", "r10i1231p1f1", "r10i1251p1f1", "r10i1281p1f1", \
+              "r2i1231p1f1", "r5i1081p1f1", "r6i1231p1f1", "r5i1231p1f1"], 
     "val": ["r2i1021p1f1"],
-    "test": ["r2i1301p1f1"],
+    "test": ["r2i1301p1f1", "r6i1101p1f1"],
     "time_range": pd.date_range("1851-01", "2013-12", freq="MS"),
     "member_ids": None
 }
@@ -93,9 +98,12 @@ TARGET_CONFIG = {
 MODEL = "UNetRes3"
 LOSS_FUNCTION = "MSE" 
 LOSS_FUNCTION_ARGS = {
-    "use_weights": False, 
-    "use_area_weighting": True, 
-    "zero_class_weight": None, 
+    "apply_month_weights": True,
+    "monthly_weights": util_cesm.calculate_monthly_weights(DATA_SPLIT_SETTINGS, 
+                                                            use_softmax=True, 
+                                                            T=2),
+    "apply_area_weights": True,
+    "area_weights": util_cesm.calculate_area_weights()
 }
 
 ############################# training configs ##############################
@@ -103,4 +111,8 @@ LEARNING_RATE = 1e-4
 BATCH_SIZE = 64
 NUM_EPOCHS = 10
 CHECKPOINT_INTERVAL = 1
+
+############################# evaluation configs #############################
+CHECKPOINT_TO_EVALUATE = "epoch_5"
+
 

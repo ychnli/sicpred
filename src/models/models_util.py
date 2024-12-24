@@ -78,8 +78,7 @@ class CESM_Dataset(torch.utils.data.Dataset):
             target_sample = target_ds["data"].isel(start_prediction_month=start_idx)
         
         start_prediction_month = input_sample.start_prediction_month.values
-        time_npy = np.array([start_prediction_month.astype('datetime64[Y]').item().year, 
-                             start_prediction_month.astype('datetime64[M]').item().month]) 
+        time_npy = np.array([start_prediction_month.astype('datetime64[M]').item().month]) 
 
         sample = {
             "input": torch.tensor(input_sample.values, dtype=torch.float32),
@@ -87,9 +86,6 @@ class CESM_Dataset(torch.utils.data.Dataset):
             "start_prediction_month": time_npy,
             "member_id": member_id
         }
-
-        if self.transform:
-            sample = self.transform(sample)
 
         return sample
 

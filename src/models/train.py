@@ -5,10 +5,10 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader
 from torch.optim import Adam
-from torch.nn import MSELoss
 from tqdm import tqdm
 import argparse 
 import importlib.util
+import inspect
 
 from src.models.models_util import CESM_Dataset
 from src.models.models import UNetRes3
@@ -28,12 +28,20 @@ def train_epoch(model, dataloader, optimizer, loss_fn, device, epoch, total_epoc
     model.train()
     epoch_loss = 0
     progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Epoch {epoch}/{total_epochs} [Train]")
-    
+    loss_fn_params = inspect.signature(loss_fn.forward).parameters
+
     for _, batch in progress_bar:
         inputs, targets = batch["input"].to(device), batch["target"].to(device)
+        
         optimizer.zero_grad()
         predictions = model(inputs)
-        loss = loss_fn(predictions, targets)
+
+        loss_kwargs = {"prediction": predictions, "target": targets}
+        if "target_months" in loss_fn_params:
+            target_months = batch["start_prediction_month"].to(device)
+            loss_kwargs["target_months"] = target_months
+
+        loss = loss_fn(**loss_kwargs)
         loss.backward()
         optimizer.step()
         
@@ -47,12 +55,19 @@ def validate_epoch(model, dataloader, loss_fn, device, epoch, total_epochs):
     model.eval()
     epoch_loss = 0
     progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Epoch {epoch}/{total_epochs} [Val]")
+    loss_fn_params = inspect.signature(loss_fn.forward).parameters
 
     with torch.no_grad():
         for batch_idx, batch in progress_bar:
             inputs, targets = batch["input"].to(device), batch["target"].to(device)
             predictions = model(inputs)
-            loss = loss_fn(predictions, targets)
+
+            loss_kwargs = {"prediction": predictions, "target": targets}
+            if "target_months" in loss_fn_params:
+                target_months = batch["start_prediction_month"].to(device)
+                loss_kwargs["target_months"] = target_months
+
+            loss = loss_fn(**loss_kwargs)
             
             epoch_loss += loss.item()
             # Update progress bar with batch loss
@@ -71,7 +86,7 @@ def main():
 
     # Initialize WandB
     wandb.init(project="sea-ice-prediction", name=config.EXPERIMENT_NAME, 
-               notes=config.NOTES)
+               notes=config.NOTES, mode="online")
 
     # Data split settings
     train_dataset = CESM_Dataset("train", config.DATA_SPLIT_SETTINGS)
@@ -87,14 +102,16 @@ def main():
     out_channels = util_cesm.get_num_output_channels(config.MAX_LEAD_MONTHS, config.TARGET_CONFIG)
     
     if config.MODEL == "UNetRes3": 
-        model = UNetRes3(in_channels=in_channels, out_channels=out_channels).to(device)
+        model = UNetRes3(in_channels=in_channels, 
+                        out_channels=out_channels, 
+                        predict_anomalies=config.TARGET_CONFIG["predict_anom"]).to(device)
     else: 
         raise NotImplementedError(f"Model {config.MODEL} not implemented.")
     
     optimizer = Adam(model.parameters(), lr=config.LEARNING_RATE)
 
     if config.LOSS_FUNCTION == "MSE": 
-        loss_fn = WeightedMSELoss(**config.LOSS_FUNCTION_ARGS)
+        loss_fn = WeightedMSELoss(device=device, **config.LOSS_FUNCTION_ARGS)
     
     # Load a checkpoint if it exists
     save_dir = os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME)
@@ -102,16 +119,17 @@ def main():
     total_epochs = config.NUM_EPOCHS
 
     # Check for an existing checkpoint
-    latest_checkpoint_name = max([f for f in os.listdir(save_dir) if f.endswith(".pth")]) 
-    latest_epoch = int(latest_checkpoint_name.split("_")[-1].split(".")[0])
+    if os.path.exists(save_dir) and len(os.listdir(save_dir)) != 0:
+        latest_checkpoint_name = max([f for f in os.listdir(save_dir) if f.endswith(".pth")]) 
+        latest_epoch = int(latest_checkpoint_name.split("_")[-1].split(".")[0])
 
-    if latest_epoch < total_epochs:
-        checkpoint_path = os.path.join(save_dir, latest_checkpoint_name)
-        checkpoint = torch.load(checkpoint_path, weights_only=True)
-        model.load_state_dict(checkpoint["model_state_dict"])
-        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        start_epoch = checkpoint["epoch"]
-        print(f"Resuming training from epoch {start_epoch}.")
+        if latest_epoch < total_epochs:
+            checkpoint_path = os.path.join(save_dir, latest_checkpoint_name)
+            checkpoint = torch.load(checkpoint_path, weights_only=True)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            start_epoch = checkpoint["epoch"]
+            print(f"Resuming training from epoch {start_epoch}.")
 
     os.makedirs(save_dir, exist_ok=True)
     for epoch in range(start_epoch, total_epochs + 1):

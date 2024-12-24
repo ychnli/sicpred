@@ -29,17 +29,21 @@ class WeightedMSELoss(nn.Module):
 
         self.device = device
         self.apply_month_weights = apply_month_weights
-        self.monthly_weights = monthly_weights
+        if monthly_weights is not None:
+            self.monthly_weights = torch.from_numpy(monthly_weights).to(device)
         self.apply_area_weights = apply_area_weights
-        self.area_weights = area_weights
+        if area_weights is not None: 
+            self.area_weights = torch.from_numpy(area_weights).to(device)
         self.scale_factor = scale_factor
+    
 
-    def forward(self, output, target, target_months):
-        diff = target - output # shape = (batch_size, n_channels, n_x, n_y)
+    def forward(self, prediction, target, target_months):
+        diff = target - prediction # shape = (batch_size, n_channels, n_x, n_y)
 
         if self.apply_month_weights:
-            for i, target_month in enumerate(target_months): 
-                diff[:, i, :, :] *= self.monthly_weights[target_month - 1]
+            for i in range(diff.shape[0]): 
+                for j, target_month in enumerate(target_months[i, :]): 
+                    diff[i, j, :, :] *= self.monthly_weights[target_month - 1]
         
         if self.apply_area_weights:
             diff *= self.area_weights 

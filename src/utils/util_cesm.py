@@ -3,6 +3,7 @@ import xarray as xr
 import numpy as np 
 import pandas as pd
 import time
+import pyproj
 
 from src import config_cesm as config
 from src.utils.util_shared import write_nc_file
@@ -138,13 +139,13 @@ def normalize_data(var_name, data_split_settings, max_lead_months=6,
         # this adds an extension of max_lead_months since we potentially need the normalized sea ice
         # for constructing the labels 
         all_times = all_times.union(pd.date_range(all_times[-1], all_times[-1] + pd.DateOffset(months=max_lead_months), freq="MS"))
-        da = da.sel(time=all_times) 
-        da_train_subset = da.sel(time=data_split_settings["train"], member_id=data_split_settings["member_ids"])
+        da = da.sel(time=all_times, member_id=data_split_settings["member_ids"]) 
+        da_train_subset = da.sel(time=data_split_settings["train"])
 
     elif data_split_settings["split_by"] == "ensemble_member": 
         all_member_ids = data_split_settings["train"] + data_split_settings["val"] + data_split_settings["test"]
-        da = da.sel(member_id=all_member_ids) 
-        da_train_subset = da.sel(member_id=data_split_settings["train"], time=data_split_settings["time_range"])
+        da = da.sel(member_id=all_member_ids, time=data_split_settings["time_range"]) 
+        da_train_subset = da.sel(member_id=data_split_settings["train"])
         
     else:
         raise ValueError("data_split_settings split_by must be 'time' or 'ensemble_member'")
@@ -320,7 +321,10 @@ def save_inputs_files(input_config, save_path, data_split_settings):
         da_merged = da_merged.chunk(chunks={"start_prediction_month":12, "channel":-1})
 
         # clean up singleton dimensions
-        da_merged = da_merged.drop_vars(("z_t", "lev"))
+        if "z_t" in da_merged.dims: 
+            da_merged = da_merged.drop_vars("z_t")
+        if "lev" in da_merged.dims:
+            da_merged = da_merged.drop_vars("lev")
         
         
         print("done! Saving...")
@@ -420,11 +424,112 @@ def get_num_output_channels(max_lead_months, target_config):
         raise NotImplementedError()
     
 
-def calculate_seasonal_ice_area_weights(data_split_settings):
+
+def generate_sps_grid(grid_size=80, lat_boundary=-52.5):
+    # Define the South Polar Stereographic projection (EPSG:3031)
+    proj_south_pole = pyproj.Proj(proj='stere', lat_0=-90, lon_0=0, lat_ts=-70)
+
+    # Define the geographic coordinate system (EPSG:4326)
+    proj_geographic = pyproj.Proj(proj='latlong', datum='WGS84')
+
+    # Create a transformer object for forward (Stereographic to Geographic) transformations
+    transformer = pyproj.Transformer.from_proj(proj_south_pole, proj_geographic, always_xy=True)
+
+    # Compute the maximum radius from the South Pole in stereographic coordinates
+    _, max_radius = proj_south_pole(0, lat_boundary)
+
+    x = np.linspace(-max_radius, max_radius, grid_size)
+    y = np.linspace(-max_radius, max_radius, grid_size)
+    X, Y = np.meshgrid(x, y)
+
+    # Transform coordinates to geographic (lat, lon) for the cell centers
+    lon, lat = transformer.transform(X, Y)
+
+    # Compute the edges (boundaries) of the grid cells
+    x_edges = np.linspace(-max_radius, max_radius, grid_size + 1)
+    y_edges = np.linspace(-max_radius, max_radius, grid_size + 1)
+    X_edges, Y_edges = np.meshgrid(x_edges, y_edges)
+
+    # Transform the edges to geographic coordinates
+    lon_edges, lat_edges = transformer.transform(X_edges, Y_edges)
+
+    # Calculate grid cell areas
+    geod = pyproj.Geod(ellps="WGS84")
+    areas = np.zeros((grid_size, grid_size))
+
+    for i in range(grid_size):
+        for j in range(grid_size):
+            # Define the four corners of the grid cell using edges
+            lons = [lon_edges[i, j], lon_edges[i + 1, j], lon_edges[i + 1, j + 1], lon_edges[i, j + 1]]
+            lats = [lat_edges[i, j], lat_edges[i + 1, j], lat_edges[i + 1, j + 1], lat_edges[i, j + 1]]
+            
+            # Compute the polygon area
+            area, _ = geod.polygon_area_perimeter(lons, lats)
+            areas[i, j] = abs(area)  # Area might be negative due to polygon orientation
+
+    # Create the output dataset
+    output_grid = xr.Dataset(
+        {
+            "lat": (["y", "x"], lat),
+            "lon": (["y", "x"], lon),
+            "area": (["y", "x"], areas),
+        },
+        coords={
+            "x": (["x"], x),
+            "y": (["y"], y),
+        }
+    )
+
+    return output_grid
+
+
+def calculate_area_weights():
+    """
+    Calculates a grid of weights according to grid cell area 
+
+    Returns:
+        (np.array)      weights (shape=(80,80))
+    """
+
+    grid = generate_sps_grid()
+    
+    weights = (grid.area / np.max(grid.area)).values 
+
+    return weights 
+
+
+def calculate_monthly_weights(data_split_settings, use_softmax=True, T=2):
+    """
+    Calculates the monthly weights based on the seasonal sea ice cycle.
+    
+    Param:
+        (dict)      data_split_settings
+        (bool)      use_softmax (optionally apply softmax to reduce the upweighting of summer months)
+        (float)     T (denominator of the softmax)
+
+    Returns:
+        (np.array)  weights (shape=(12,))
+    """
+
     file = os.path.join(config.PROCESSED_DATA_DIRECTORY, "normalized_inputs", data_split_settings["name"], "icefrac_mean.nc")
     if os.path.exists(file):
         ds = xr.open_dataset(file)
         da = ds.icefrac
+    else:
+        raise FileNotFoundError(f"seems like you still need to generate icefrac_mean for data setting {data_split_settings["name"]}")
 
-        # calculate the total sea ice area for each month
-        ice_area = da.where(da > 0).count(dim=("x", "y"))
+    grid = generate_sps_grid()
+
+    sia = (da * grid.area).sum(("x", "y")).values
+
+    def softmax(x, T):
+        e_x = np.exp((x - np.max(x)) / T)
+        return e_x / e_x.sum(axis=0) 
+    
+    if use_softmax: 
+        softmax_sia = softmax(sia / 1e13, T=T)
+        weights = max(softmax_sia) / softmax_sia
+    else:
+        weights = max(sia) / sia 
+    
+    return weights 
