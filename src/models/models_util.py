@@ -400,3 +400,23 @@ def evaluate_model(model, model_hyperparam_configs, device):
     targets = torch.cat(targets_list, dim=0).cpu().numpy()
 
     return predictions, targets
+
+
+def generate_empty_predictions_ds(reference_grid, time_coords, ensemble_members, max_lead_time, y_dim, x_dim):
+    ds = xr.Dataset(
+        {
+            "predictions": (
+                ["start_prediction_month", "member_id", "lead_time", "y", "x"],
+                np.full((len(time_coords), len(ensemble_members), max_lead_time, y_dim, x_dim), np.nan, dtype=np.float32)
+            )
+        },
+        coords={
+            "start_prediction_month": time_coords,
+            "member_id": ensemble_members,
+            "lead_time": np.arange(1, max_lead_time+1),
+            "y": reference_grid.y.values,
+            "x": reference_grid.x.values,
+        }
+    )
+
+    return ds 
