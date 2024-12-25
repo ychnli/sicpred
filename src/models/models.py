@@ -10,7 +10,10 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 from src import config
+from src import config_cesm
 from src.utils import util_era5 
+from src.utils import util_cesm
+from src.models import models_util
 
 
 def linear_trend(target_month, save_path, linear_years="all", verbose=1):
@@ -95,30 +98,110 @@ def linear_trend(target_month, save_path, linear_years="all", verbose=1):
     return prediction
 
 
-def anomaly_persistence(start_prediction_month, predict_anomalies=False):
+def anomaly_persistence(data_split_settings, save_path, max_lead_time=6):
     """
-    The anomaly persistence baseline model 
+    The anomaly persistence baseline model (carries forward the anomaly from some init month)
+
+    Param:
+        (dict)          data_split_settings: dictionary containing the data split settings 
+        (str)           save_path 
+    
+    Returns:
+        (xr.Dataset)    predictions: the anomaly persistence predictions
     """
 
-    siconc_anom = xr.open_dataset(f"{DATA_DIRECTORY}/sicpred/normalized_inputs/siconc_anom.nc").siconc
-    siconc_clim = xr.open_dataset(f"{DATA_DIRECTORY}/NSIDC/siconc_clim.nc").siconc
-    land_mask = xr.open_dataset(f"{DATA_DIRECTORY}/NSIDC/land_mask.nc").mask
-    siconc_anom *= ~land_mask
+    # Check if the file already exists
+    save_name = os.path.join(save_path, "anomaly_persistence_predictions.nc")
+    if os.path.exists(save_name):
+        print(f"Found pre-existing file with path {save_name}. Skipping...")
+        return 
 
-    anomaly_to_persist = siconc_anom.sel(time=start_prediction_month - pd.DateOffset(months=1)) 
-    months_to_predict_clim = siconc_clim.sel(time=pd.date_range(start_prediction_month, \
-        start_prediction_month+pd.DateOffset(months=5), freq='MS'))
+    # Load the data
+    ds = xr.open_dataset(f"{config_cesm.RAW_DATA_DIRECTORY}/icefrac/icefrac_merged.nc")
+    if data_split_settings["split_by"] == "ensemble_member":
+        ensemble_members = data_split_settings["test"]
+        time_coords = data_split_settings["time_range"]
+    elif data_split_settings["split_by"] == "time":
+        ensemble_members = data_split_settings["member_ids"]
+        time_coords = data_split_settings["test"]
 
-    prediction = months_to_predict_clim + anomaly_to_persist 
+    icefrac_test_da = ds.icefrac.sel(time=time_coords, member_id=ensemble_members)
+    
+    ds_means = xr.open_dataset(f"{config_cesm.PROCESSED_DATA_DIRECTORY}/normalized_inputs/\
+                               {data_split_settings["name"]}/icefrac_mean.nc")
+    da_means = ds_means.icefrac 
 
-    # clip unphysical values outside of [0, 1] 
-    prediction = prediction.where(prediction > 1, 1)
-    prediction = prediction.where(prediction < 0, 0)
+    # compute the anomaly
+    months = icefrac_test_da['time'].dt.month
+    anom_da = icefrac_test_da - da_means.sel(month=months)
 
-    if predict_anomalies:
-        prediction = prediction - months_to_predict_clim
+    # Initialize an empty xarray Dataset
+    reference_grid = util_cesm.generate_sps_grid()
+    ds = models_util.generate_empty_predictions_ds(reference_grid, time_coords, ensemble_members, max_lead_time, 80, 80)
 
-    return prediction
+    for i, start_month in enumerate(time_coords):
+        for j in range(max_lead_time):
+            pred = anom_da.sel(time=start_month + pd.DateOffset(months=j)).values + icefrac_test_da.sel(time=start_month).values
+            ds["predictions"][i, :, j, :, :] = pred
+    
+    # clip unphysical predictions outside [0,1]
+    ds["predictions"] = ds["predictions"].clip(0, 1)
+
+    # save 
+    ds.to_netcdf(save_name) 
+    return ds
+
+
+def climatology(data_split_settings, save_path, max_lead_time=6):
+    """
+    The climatology baseline model. If split_by is "time", the climatology is computed
+    over the train subset. If split_by is "ensemble_member", the climatology is computed
+    over each ensemble member in the train subset for each year separately.
+
+    Param:
+        (dict)          data_split_settings: dictionary containing the data split settings 
+        (str)           save_path 
+    
+    Returns:
+        (xr.Dataset)    predictions
+    """
+    
+    # Check if the file already exists
+    save_name = os.path.join(save_path, "climatology_predictions.nc")
+    if os.path.exists(save_name):
+        print(f"Found pre-existing file with path {save_name}. Skipping...")
+        return 
+
+    # Load the data
+    ds = xr.open_dataset(f"{config_cesm.RAW_DATA_DIRECTORY}/icefrac/icefrac_merged.nc")
+    if data_split_settings["split_by"] == "ensemble_member":
+        ensemble_members = data_split_settings["train"]
+        time_coords = data_split_settings["time_range"]
+
+        da = ds.icefrac.sel(time=time_coords, member_id=ensemble_members)
+        da_means = da.mean("member_id")
+
+    elif data_split_settings["split_by"] == "time":
+        ensemble_members = data_split_settings["member_ids"]
+        time_coords = data_split_settings["train"]
+
+        da = ds.icefrac.sel(time=time_coords, member_id=ensemble_members)
+        da_means = da.groupby("time.month").mean(("time", "member_id"))
+    
+    for i, start_month in enumerate(time_coords):
+        for j in range(max_lead_time):
+            pred_month = (start_month + pd.DateOffset(months=j)).month
+
+            if data_split_settings["split_by"] == "ensemble_member":
+                pred = da_means.sel(time=pred_month).values
+            elif data_split_settings["split_by"] == "time":
+                pred = da_means.sel(month=pred_month).values
+                
+            ds["predictions"][i, :, j, :, :] = pred
+
+    # save 
+    ds.to_netcdf(save_name)
+    return ds
 
 
 class UNetRes3(nn.Module):
