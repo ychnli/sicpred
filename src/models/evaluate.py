@@ -3,16 +3,14 @@ import torch
 import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 import argparse 
 import importlib.util
-import inspect
+import xarray as xr
 
 from src.models.models_util import CESM_Dataset
 from src.models.models import UNetRes3
 from src.utils import util_cesm
 from src import config_cesm
-from src.models.losses import WeightedMSELoss
 
 
 def load_config(config_path):
@@ -58,9 +56,10 @@ def main():
     # Known dimensions
     if config.DATA_SPLIT_SETTINGS["split_by"] == "ensemble_member":
         ensemble_members = config.DATA_SPLIT_SETTINGS["test"]
+        time_coords = config.DATA_SPLIT_SETTINGS["time_range"]
     elif config.DATA_SPLIT_SETTINGS["split_by"] == "time":
         ensemble_members = config.DATA_SPLIT_SETTINGS["member_ids"]
-    time_coords = data_split_settings["test"]
+        time_coords = config.DATA_SPLIT_SETTINGS["test"]
     num_members = len(ensemble_members)
     channels, x_dim, y_dim = config.MAX_LEAD_MONTHS, 80, 80
     reference_grid = util_cesm.generate_sps_grid()
