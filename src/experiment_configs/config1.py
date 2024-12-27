@@ -3,7 +3,6 @@ This is a template for an experiment configuration file.
 """
 
 import pandas as pd
-from src.utils import util_cesm 
 
 ################################ description ################################
 EXPERIMENT_NAME = "simple-inputs_small-dataset_predict-anom"
@@ -99,11 +98,10 @@ MODEL = "UNetRes3"
 LOSS_FUNCTION = "MSE" 
 LOSS_FUNCTION_ARGS = {
     "apply_month_weights": True,
-    "monthly_weights": util_cesm.calculate_monthly_weights(DATA_SPLIT_SETTINGS, 
-                                                            use_softmax=True, 
-                                                            T=2),
-    "apply_area_weights": True,
-    "area_weights": util_cesm.calculate_area_weights()
+    "monthly_weights": {"data_split_settings": DATA_SPLIT_SETTINGS,
+                        "use_softmax": True,
+                        "T": 2}, # a dict of params for util_cesm.calculate_monthly_weights
+    "apply_area_weights": True
 }
 
 ############################# training configs ##############################
@@ -114,5 +112,4 @@ CHECKPOINT_INTERVAL = 1
 
 ############################# evaluation configs #############################
 CHECKPOINT_TO_EVALUATE = "epoch_5"
-
 
