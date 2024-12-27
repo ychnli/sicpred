@@ -46,6 +46,9 @@ def main():
 
     print("done! \n\n")
 
+    # save a land mask
+    util_cesm.save_land_mask() 
+
     # Prepare model-ready data pairs (concatenate stuff) 
     print("Prepping model-ready data pairs... \n")
     model_data_save_path = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.DATA_CONFIG_NAME)

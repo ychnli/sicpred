@@ -254,7 +254,7 @@ def save_inputs_files(input_config, save_path, data_split_settings):
     # get some auxiliary data
     x_coords = data_da_dict["icefrac"].x.data
     y_coords = data_da_dict["icefrac"].y.data
-    land_mask = np.isnan(data_da_dict["temp"].isel(time=0, member_id=0)).data 
+    land_mask = xr.open_dataset(os.path.join(config.DATA_DIRECTORY, "cesm_lens", "grids", "land_mask.nc")).mask.data
     land_mask = np.transpose(land_mask.reshape(1, 80, 80), [0, 2, 1]) # for some reason, x and y get switched
     
     # save each ensemble member separately so the files don't get too big 
@@ -421,12 +421,26 @@ def get_num_input_channels(input_config):
 
     return num_channels
 
+
 def get_num_output_channels(max_lead_months, target_config):
     if not target_config["predict_classes"]:
         return max_lead_months
     else:
         raise NotImplementedError()
     
+def save_land_mask():
+    save_dir = os.path.join(config.DATA_DIRECTORY, "cesm_lens", "grids")
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, "land_mask.nc")
+
+    if os.path.exists(save_path): return 
+
+    ds = xr.open_dataset(os.path.join(config.RAW_DATA_DIRECTORY, "temp", "temp_combined.nc"))
+    land_mask = np.isnan(ds.temp.isel(time=0, member_id=0))
+    land_mask = land_mask.to_dataset(name="mask").drop_vars(("member_id","z_t","time"))
+
+    land_mask.to_netcdf(save_path)
+
 
 
 def generate_sps_grid(grid_size=80, lat_boundary=-52.5):
