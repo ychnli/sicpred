@@ -65,7 +65,7 @@ def validate_epoch(model, dataloader, loss_fn, device, epoch, total_epochs):
 
             loss_kwargs = {"prediction": predictions, "target": targets}
             if "target_months" in loss_fn_params:
-                target_months = batch["start_prediction_month"][:, 1].to(device)
+                target_months = batch["start_prediction_month"][:, :, 1].to(device)
                 loss_kwargs["target_months"] = target_months
 
             loss = loss_fn(**loss_kwargs)
