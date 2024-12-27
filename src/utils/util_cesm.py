@@ -86,7 +86,7 @@ def get_start_prediction_months(data_split_settings):
     return start_prediction_months
 
 
-def normalize_data(var_name, data_split_settings, max_lead_months=6,
+def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_months=6,
                     overwrite=False, verbose=1, divide_by_stdev=True):
     """ 
     Normalize inputs based on statistics of the training data and save. 
@@ -111,15 +111,13 @@ def normalize_data(var_name, data_split_settings, max_lead_months=6,
 
     # First make a merged dataset from the separate ones 
     file_list = sorted(os.listdir(f"{config.RAW_DATA_DIRECTORY}/{var_name}"))
-    if f"{var_name}_combined.nc" in file_list: 
-        if overwrite: 
-            file_list.remove(f"{var_name}_combined.nc")
-        else: 
-            merged_ds = xr.open_dataset(os.path.join(config.RAW_DATA_DIRECTORY, f"{var_name}/{var_name}_combined.nc"))
+    if f"{var_name}_combined.nc" in file_list and not overwrite: 
+        merged_ds = xr.open_dataset(os.path.join(config.RAW_DATA_DIRECTORY, f"{var_name}/{var_name}_combined.nc"))
     else: 
         ds_list = []
 
         for file in file_list:
+            if file == f"{var_name}_combined.nc": continue
             ds = xr.open_dataset(os.path.join(f"{config.RAW_DATA_DIRECTORY}/{var_name}", file), chunks={'time': 120})
             # change the time index to pandas instead of cftime
             ds = ds.assign_coords(time=pd.date_range("1850-01", "2100-12", freq="MS"))
@@ -136,15 +134,21 @@ def normalize_data(var_name, data_split_settings, max_lead_months=6,
     if data_split_settings["split_by"] == "time": 
         all_times = get_start_prediction_months(data_split_settings)
 
-        # this adds an extension of max_lead_months since we potentially need the normalized sea ice
-        # for constructing the labels 
-        all_times = all_times.union(pd.date_range(all_times[-1], all_times[-1] + pd.DateOffset(months=max_lead_months), freq="MS"))
+        # all_times gives all time coordinates that are accessed, given variable leads and lags
+        all_times = pd.date_range(all_times[0] - pd.DateOffset(months=max_lag_months), 
+                                  all_times[-1] + pd.DateOffset(months=max_lead_months-1),
+                                  freq="MS")        
         da = da.sel(time=all_times, member_id=data_split_settings["member_ids"]) 
         da_train_subset = da.sel(time=data_split_settings["train"])
 
     elif data_split_settings["split_by"] == "ensemble_member": 
         all_member_ids = data_split_settings["train"] + data_split_settings["val"] + data_split_settings["test"]
-        da = da.sel(member_id=all_member_ids, time=data_split_settings["time_range"]) 
+        
+        all_times = data_split_settings["time_range"]
+        all_times = pd.date_range(all_times[0] - pd.DateOffset(months=max_lag_months), 
+                                  all_times[-1] + pd.DateOffset(months=max_lead_months-1),
+                                  freq="MS") 
+        da = da.sel(member_id=all_member_ids, time=all_times) 
         da_train_subset = da.sel(member_id=data_split_settings["train"])
         
     else:
