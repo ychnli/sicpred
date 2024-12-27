@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 
 from src import config
+from src.utils import util_cesm
 
 class WeightedMSELoss(nn.Module):
     """
@@ -16,23 +17,21 @@ class WeightedMSELoss(nn.Module):
                  apply_month_weights=True,
                  monthly_weights=None, 
                  apply_area_weights=True, 
-                 area_weights=None,
                  scale_factor=1):
         
         super(WeightedMSELoss, self).__init__()
-
-        if apply_month_weights:
-            assert area_weights is not None, "Area weights (same shape as output array) must be provided if area weighting is enabled"
         
         if apply_month_weights:
-            assert monthly_weights is not None, "Monthly weights (shape 12 array) must be provided if month weighting is enabled"
+            assert monthly_weights is not None, "Dict of settings for generating monthly weights must be provided if month weighting is enabled"
 
         self.device = device
         self.apply_month_weights = apply_month_weights
-        if monthly_weights is not None:
-            self.monthly_weights = torch.from_numpy(monthly_weights).to(device)
+        if apply_month_weights:
+            monthly_weights_np = util_cesm.calculate_monthly_weights(**monthly_weights)
+            self.monthly_weights = torch.from_numpy(monthly_weights_np).to(device)
         self.apply_area_weights = apply_area_weights
-        if area_weights is not None: 
+        if apply_area_weights:
+            area_weights = util_cesm.calculate_area_weights()
             self.area_weights = torch.from_numpy(area_weights).to(device)
         self.scale_factor = scale_factor
     
