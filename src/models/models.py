@@ -98,7 +98,7 @@ def linear_trend(target_month, save_path, linear_years="all", verbose=1):
     return prediction
 
 
-def anomaly_persistence(data_split_settings, save_path, max_lead_time=6):
+def anomaly_persistence(data_split_settings, save_dir, max_lead_time=6):
     """
     The anomaly persistence baseline model (carries forward the anomaly from some init month)
     This returns a dataset of the same format as the ML prediction models which makes comparing
@@ -108,17 +108,18 @@ def anomaly_persistence(data_split_settings, save_path, max_lead_time=6):
 
     Param:
         (dict)          data_split_settings: dictionary containing the data split settings 
-        (str)           save_path 
+        (str)           save_dir 
     
     Returns:
         (xr.Dataset)    predictions: the anomaly persistence predictions
     """
 
     # Check if the file already exists
-    save_name = os.path.join(save_path, "anomaly_persistence_predictions.nc")
-    if os.path.exists(save_name):
-        print(f"Found pre-existing file with path {save_name}. Skipping...")
-        return 
+    if save_dir is not None:
+        save_name = os.path.join(save_dir, "anomaly_persistence_predictions.nc")
+        if os.path.exists(save_name):
+            print(f"Found pre-existing file with path {save_name}. Skipping...")
+            return 
 
     # Load the data
     ds = xr.open_dataset(f"{config_cesm.RAW_DATA_DIRECTORY}/icefrac/icefrac_combined.nc")
@@ -144,7 +145,7 @@ def anomaly_persistence(data_split_settings, save_path, max_lead_time=6):
 
     # Initialize an empty xarray Dataset
     reference_grid = da_means # this just needs to have x and y
-    ds = generate_empty_predictions_ds(reference_grid, time_coords_test, ensemble_members, max_lead_time, 80, 80)
+    ds = models_util.generate_empty_predictions_ds(reference_grid, time_coords_test, ensemble_members, max_lead_time, 80, 80)
 
     for i, start_month in enumerate(time_coords_test):
         for j in range(max_lead_time):
@@ -158,7 +159,9 @@ def anomaly_persistence(data_split_settings, save_path, max_lead_time=6):
     ds["predictions"] = ds["predictions"].clip(0, 1)
 
     # save 
-    ds.to_netcdf(save_name) 
+    if save_dir is not None:
+        ds.to_netcdf(save_name) 
+        
     return ds
 
 
@@ -177,10 +180,11 @@ def climatology_predictions(data_split_settings, save_path, max_lead_time=6):
     """
     
     # Check if the file already exists
-    save_name = os.path.join(save_path, "climatology_predictions.nc")
-    if os.path.exists(save_name):
-        print(f"Found pre-existing file with path {save_name}. Skipping...")
-        return 
+    if save_dir is not None:
+        save_name = os.path.join(save_dir, "climatology_predictions.nc")
+        if os.path.exists(save_name):
+            print(f"Found pre-existing file with path {save_name}. Skipping...")
+            return 
 
     # Load the data
     ds = xr.open_dataset(f"{config_cesm.RAW_DATA_DIRECTORY}/icefrac/icefrac_combined.nc")
@@ -224,7 +228,9 @@ def climatology_predictions(data_split_settings, save_path, max_lead_time=6):
             ds["predictions"][i, :, j, :, :] = pred
 
     # save 
-    ds.to_netcdf(save_name)
+    if save_dir is not None:
+        ds.to_netcdf(save_name) 
+
     return ds
 
 
