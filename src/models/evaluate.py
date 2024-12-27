@@ -3,9 +3,10 @@ import torch
 import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader
-import argparse 
+import argparse
 import importlib.util
 import xarray as xr
+from tqdm import tqdm  
 
 from src.models.models_util import CESM_Dataset
 from src.models.models import UNetRes3
@@ -28,7 +29,7 @@ def main():
     # Load configurations
     config = load_config(args.config)
 
-    test_dataset = CESM_Dataset("train", config.DATA_SPLIT_SETTINGS)
+    test_dataset = CESM_Dataset("test", config.DATA_SPLIT_SETTINGS)
     test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=2)
 
     # Load the model and checkpoint
@@ -83,8 +84,7 @@ def main():
 
     # Populate the Dataset with predictions
     with torch.no_grad():
-        for i,batch in enumerate(test_dataloader):
-            print(f"Evaluating for batch {i}")
+        for i, batch in enumerate(tqdm(test_dataloader, desc="Evaluating", unit="batch")):  # Add tqdm progress bar
             inputs = batch["input"].to(device)
             predictions = model(inputs).cpu().numpy()  # Move predictions to CPU
 
