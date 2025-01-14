@@ -84,20 +84,23 @@ def main():
 
     # Populate the Dataset with predictions
     with torch.no_grad():
-        for i, batch in enumerate(tqdm(test_dataloader, desc="Evaluating", unit="batch")):  # Add tqdm progress bar
+        for i, batch in enumerate(tqdm(test_dataloader, desc="Evaluating", unit="sample")): 
             inputs = batch["input"].to(device)
             predictions = model(inputs).cpu().numpy()  # Move predictions to CPU
-
+            
+            # since batch size = 1, get the only sample in the batch
+            predictions = predictions[0]
+``
             # Extract metadata
-            start_year, start_month = batch["start_prediction_month"].cpu().numpy()[0]
+            start_year, start_month = batch["start_prediction_month"].cpu().numpy()[0,0]
+            start_prediction_month = pd.Timestamp(year=start_year, month=start_month, day=1)
             member_id = batch["member_id"][0]
 
             # Find the appropriate indices
-            time_idx = list(time_coords).index(pd.Timestamp(year=start_year, month=start_month, day=1))
+            time_idx = list(time_coords).index(start_prediction_month)
             member_idx = list(ensemble_members).index(member_id)
 
-            # Populate the dataset at the appropriate indices
-            ds["predictions"][time_idx, member_idx, :, :, :] = predictions[0] 
+            ds["predictions"][time_idx, member_idx, :, :, :] = predictions
 
     # Save the Dataset as NetCDF
     output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config.EXPERIMENT_NAME)
