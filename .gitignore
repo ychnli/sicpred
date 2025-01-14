@@ -2,3 +2,4 @@ src/logs
 logs
 figures
 src/.DS_Store
+wandb
