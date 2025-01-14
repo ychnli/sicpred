@@ -165,7 +165,7 @@ def anomaly_persistence(data_split_settings, save_dir, max_lead_time=6):
     return ds
 
 
-def climatology_predictions(data_split_settings, save_path, max_lead_time=6):
+def climatology_predictions(data_split_settings, save_dir, max_lead_time=6):
     """
     The climatology baseline model. If split_by is "time", the climatology is computed
     over the train subset. If split_by is "ensemble_member", the climatology is computed
@@ -173,7 +173,7 @@ def climatology_predictions(data_split_settings, save_path, max_lead_time=6):
 
     Param:
         (dict)          data_split_settings: dictionary containing the data split settings 
-        (str)           save_path 
+        (str)           save_dir 
     
     Returns:
         (xr.Dataset)    predictions
@@ -218,12 +218,12 @@ def climatology_predictions(data_split_settings, save_path, max_lead_time=6):
 
     for i, start_month in enumerate(time_coords):
         for j in range(max_lead_time):
-            pred_month = (start_month + pd.DateOffset(months=j)).month
+            pred_month = (start_month + pd.DateOffset(months=j))
 
             if data_split_settings["split_by"] == "ensemble_member":
                 pred = da_means.sel(time=pred_month).values
             elif data_split_settings["split_by"] == "time":
-                pred = da_means.sel(month=pred_month).values
+                pred = da_means.sel(month=pred_month.month).values
                 
             ds["predictions"][i, :, j, :, :] = pred
 
