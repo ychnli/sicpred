@@ -90,7 +90,7 @@ def main():
             
             # since batch size = 1, get the only sample in the batch
             predictions = predictions[0]
-``
+
             # Extract metadata
             start_year, start_month = batch["start_prediction_month"].cpu().numpy()[0,0]
             start_prediction_month = pd.Timestamp(year=start_year, month=start_month, day=1)
