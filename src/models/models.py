@@ -253,6 +253,7 @@ class UNetRes3(nn.Module):
         super(UNetRes3, self).__init__()
         self.clip_near_zero_values = clip_near_zero_values
         self.epsilon = epsilon 
+        self.predict_anomalies = predict_anomalies
 
         self.encoder1 = self.conv_block(in_channels, int(64 * n_channels_factor), filter_size)
         self.encoder2 = self.conv_block(int(64 * n_channels_factor), int(128 * n_channels_factor), filter_size)
@@ -322,9 +323,14 @@ class UNetRes3(nn.Module):
         dec1 = self.decoder1_conv_2(dec1)
         dec1 = self.decoder1_conv_2(dec1)
 
-        # Mapping to (-1, 1)
-        output = torch.tanh(self.final_conv_reg(dec1))
+        if self.predict_anomalies:
+            # Mapping to (-1, 1)
+            output = torch.tanh(self.final_conv_reg(dec1))
+        else: 
+            # Mapping to (0, 1)
+            output = torch.sigmoid(self.final_conv_reg(dec1)) 
 
+        # apply clipping to zeros and land mask 
         if self.clip_near_zero_values:
             output = output.where(output.abs() > self.epsilon, 0)
 
