@@ -276,12 +276,22 @@ class UNetRes3(nn.Module):
         self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
 
         # Make a land mask tensor that is the same shape as the output tensor
-        land_mask = self.create_land_mask(spatial_shape)
+        land_mask = self.create_inverted_land_mask()
         self.register_buffer("land_mask", land_mask)
     
-    def create_land_mask(self, spatial_shape):
-        ds = xr.open_dataset("/scratch/users/yucli/cesm_data/temp/temp_member_00.nc").isel(time=0)
-        land_mask_npy = ~np.isnan(ds.temp).values       
+    def create_inverted_land_mask(self):
+        """
+        Creates an inverted land mask (0s on land and 1s on ocean) according to the icefrac land 
+        mask. This is smaller than the SST land mask due to representation of coastlines (thus
+        icefrac is nonzero on coastline cells, whereas SST is NaN). 
+        """
+        try: 
+            ds = xr.open_dataset(os.path.join(config_cesm.DATA_DIRECTORY, "cesm_lens/grids/icefrac_land_mask.nc"))
+        except:
+            raise Exception("Uh oh, seems like you still need to run the preprocess script to generate \
+                an icefrac land mask. See src/util_cesm for the function")
+
+        land_mask_npy = ~ds.mask.values # inverted  
 
         return torch.from_numpy(land_mask_npy).unsqueeze(0).repeat(6, 1, 1)
         

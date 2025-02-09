@@ -9,6 +9,7 @@ from src import config_cesm as config
 from src.utils.util_shared import write_nc_file
 
 ALL_VAR_NAMES = config.ALL_VAR_NAMES
+LAND_MASK_PATH = os.path.join(config.DATA_DIRECTORY, "cesm_lens", "grids", "land_mask.nc")
 
 def check_valid_data_split_settings(data_split_settings):
     ### TODO: check that data_split_settings is valid 
@@ -200,6 +201,8 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
 
 def load_inputs_data_da_dict(input_config, data_split_settings):
     """
+    This function loads in combined data (after normalization) into a dictionary.
+
     Param:
         (dict)      input_config
         (dict)      data_split_settings 
@@ -254,7 +257,7 @@ def save_inputs_files(input_config, save_path, data_split_settings):
     # get some auxiliary data
     x_coords = data_da_dict["icefrac"].x.data
     y_coords = data_da_dict["icefrac"].y.data
-    land_mask = xr.open_dataset(os.path.join(config.DATA_DIRECTORY, "cesm_lens", "grids", "land_mask.nc")).mask.data
+    land_mask = xr.open_dataset(LAND_MASK_PATH).mask.data
     land_mask = np.transpose(land_mask.reshape(1, 80, 80), [0, 2, 1]) # for some reason, x and y get switched
     
     # save each ensemble member separately so the files don't get too big 
@@ -429,9 +432,15 @@ def get_num_output_channels(max_lead_months, target_config):
         raise NotImplementedError()
     
 def save_land_mask():
+    """
+    This saves the SST land mask (i.e., a boolean map equal to 1 where SST is NaN)
+
+    This is the same land mask as icethick, but NOT the same as icefrac. See the function below
+    for more info. 
+    """
     save_dir = os.path.join(config.DATA_DIRECTORY, "cesm_lens", "grids")
     os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, "land_mask.nc")
+    save_path = LAND_MASK_PATH
 
     if os.path.exists(save_path): return 
 
@@ -441,6 +450,33 @@ def save_land_mask():
 
     land_mask.to_netcdf(save_path)
 
+def save_icefrac_land_mask():
+    """
+    Note: this is DISTINCT from the SST land mask. The icefrac variable seems to account for
+    more detailed coastlines and is therefore nonzero in coastline areas where SST is NaN. 
+    
+    Thus in general, the region where icefrac is always 0 is smaller than the SST & icethick 
+    land mask. We will define the icefrac land mask as the intersection of the SST land mask 
+    and the region where icefrac is always 0. 
+    """
+    save_dir = os.path.join(config.DATA_DIRECTORY, "cesm_lens", "grids")
+    save_path = os.path.join(save_dir, "icefrac_land_mask.nc")
+
+    if os.path.exists(save_path): return 
+
+    ds = xr.open_dataset(f"{config.RAW_DATA_DIRECTORY}/icefrac/icefrac_combined.nc")
+
+    # we'll use 5 ensemble members to calculate the region where icefrac is always 0
+    icefrac_zero_mask = ds["icefrac"].isel(member_id=slice(0,5)).mean(("member_id", "time")) == 0
+    
+    # get the SST land mask
+    try:
+        sst_land_mask = xr.open_dataset(LAND_MASK_PATH).mask
+    except:
+        raise Exception("Didn't find the sst land mask variable. You should call save_land_mask first")
+
+    icefrac_land_mask = np.logical_and(sst_land_mask, icefrac_zero_mask)
+    icefrac_land_mask.to_dataset(name="mask").to_netcdf(save_path)
 
 
 def generate_sps_grid(grid_size=80, lat_boundary=-52.5):

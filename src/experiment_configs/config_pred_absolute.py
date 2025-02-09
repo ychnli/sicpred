@@ -102,7 +102,7 @@ LOSS_FUNCTION_ARGS = {
 }
 
 ############################# training configs ##############################
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 1e-3
 BATCH_SIZE = 64
 NUM_EPOCHS = 8
 CHECKPOINT_INTERVAL = 1
