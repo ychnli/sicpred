@@ -108,6 +108,6 @@ NUM_EPOCHS = 8
 CHECKPOINT_INTERVAL = 1
 
 ############################# evaluation configs #############################
-CHECKPOINT_TO_EVALUATE = "epoch_5"
+CHECKPOINT_TO_EVALUATE = "epoch_8"
 
 

@@ -46,8 +46,11 @@ def main():
 
     print("done! \n\n")
 
-    # save a land mask
+    # save the SST land mask
     util_cesm.save_land_mask() 
+
+    # save the icefrac land mask
+    util_cesm.save_icefrac_land_mask() 
 
     # Prepare model-ready data pairs (concatenate stuff) 
     print("Prepping model-ready data pairs... \n")
@@ -60,18 +63,6 @@ def main():
                                  config.MAX_LEAD_MONTHS, config.DATA_SPLIT_SETTINGS)
     print("all done! \n\n")
 
-    # keep track of which data settings have already been preprocessed
-    # save_path = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "processed_data_configs.pkl")
-    # if os.path.exists(save_path):
-    #     with open(save_path, "rb") as f:
-    #         processed_data_configs = pickle.load(f)
-    #         processed_data_configs.append(config.DATA_SPLIT_SETTINGS) 
-    # else: 
-    #     processed_data_configs = []
-    #     processed_data_configs.append(config.DATA_SPLIT_SETTINGS)
-    
-    # with open(save_path, "wb") as f:
-    #     pickle.dump(f, processed_data_configs)
 
 if __name__ == "__main__":
     main()
