@@ -88,13 +88,14 @@ def get_start_prediction_months(data_split_settings):
 
 
 def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_months=6,
-                    overwrite=False, verbose=1, divide_by_stdev=True):
+                   overwrite=False, verbose=1, divide_by_stdev=True):
     """ 
     Normalize inputs based on statistics of the training data and save. 
+    Handles both CESM and observational data.
 
     Param:
         (string)    var_name: the standard name of the variable
-        (dict)      normaliation_scheme: a dict specifying how the data is split 
+        (dict)      data_split_settings: a dict specifying how the data is split 
         (bool)      overwrite 
         (int)       verbose  
         (bool)      divide_by_stdev: if True, computes (x - mu)/(sigma)
@@ -110,13 +111,17 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
 
     print(f"Normalizing {var_name}, divide_by_stdev = {divide_by_stdev}...", end=" ")
 
-    # First make a merged dataset from the separate ones 
+    # Check if we need to include observational data
+    has_obs = "obs" in data_split_settings["member_ids"]
+    
+    # First make a merged dataset from the CESM ensemble members
     file_list = sorted(os.listdir(f"{config.RAW_DATA_DIRECTORY}/{var_name}"))
+    merged_ds = None
+    
     if f"{var_name}_combined.nc" in file_list and not overwrite: 
         merged_ds = xr.open_dataset(os.path.join(config.RAW_DATA_DIRECTORY, f"{var_name}/{var_name}_combined.nc"))
     else: 
         ds_list = []
-
         for file in file_list:
             if file == f"{var_name}_combined.nc": continue
             ds = xr.open_dataset(os.path.join(f"{config.RAW_DATA_DIRECTORY}/{var_name}", file), chunks={'time': 120})
@@ -124,10 +129,41 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
             ds = ds.assign_coords(time=pd.date_range("1850-01", "2100-12", freq="MS"))
             ds_list.append(ds)
 
-        merged_ds = xr.concat(ds_list, dim="member_id")
+        if ds_list:
+            merged_ds = xr.concat(ds_list, dim="member_id")
+            # save the merged ds before normalizing 
+            write_nc_file(merged_ds, f"{config.RAW_DATA_DIRECTORY}/{var_name}/{var_name}_combined.nc", overwrite)
     
-        # save the merged ds before normalizing 
-        write_nc_file(merged_ds, f"{config.RAW_DATA_DIRECTORY}/{var_name}/{var_name}_combined.nc", overwrite)
+    # Add observational data if requested and available
+    if has_obs and var_name in ["icefrac", "temp", "psl"]:
+        obs_file = os.path.join(config.DATA_DIRECTORY, "ERA5", "cesm_format", f"{var_name}_obs.nc")
+        if os.path.exists(obs_file):
+            obs_ds = xr.open_dataset(obs_file)
+            
+            # Convert to a DataArray with member_id dimension
+            obs_da = obs_ds[var_name].expand_dims({"member_id": ["obs"]})
+            
+            # If we have CESM data, merge with obs data
+            if merged_ds is not None:
+                da_cesm = merged_ds[var_name]
+                # If merged dataset already has 'obs', drop it
+                if "obs" in da_cesm.member_id.values:
+                    da_cesm = da_cesm.sel(member_id=[m for m in da_cesm.member_id.values if m != "obs"])
+                # Concat along the member_id dimension
+                da = xr.concat([da_cesm, obs_da], dim="member_id")
+            else:
+                # If no CESM data, just use obs data
+                da = obs_da
+            
+            # Convert back to dataset
+            merged_ds = da.to_dataset(name=var_name)
+        elif verbose >= 1:
+            print(f"Warning: Observation data for {var_name} not found at {obs_file}")
+    
+    # If we still don't have any data, exit
+    if merged_ds is None:
+        print(f"No data found for {var_name}. Skipping...")
+        return None
     
     # create a subsetted DataArray that contains the data requested by data_split_settings
     da = merged_ds[var_name]
@@ -138,8 +174,10 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
         # all_times gives all time coordinates that are accessed, given variable leads and lags
         all_times = pd.date_range(all_times[0] - pd.DateOffset(months=max_lag_months), 
                                   all_times[-1] + pd.DateOffset(months=max_lead_months-1),
-                                  freq="MS")        
-        da = da.sel(time=all_times, member_id=data_split_settings["member_ids"]) 
+                                  freq="MS")
+        
+        # Use drop=False to prevent errors when some times don't exist in obs data
+        da = da.sel(time=all_times, member_id=data_split_settings["member_ids"], drop=False) 
         da_train_subset = da.sel(time=data_split_settings["train"])
 
     elif data_split_settings["split_by"] == "ensemble_member": 
@@ -149,7 +187,9 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
         all_times = pd.date_range(all_times[0] - pd.DateOffset(months=max_lag_months), 
                                   all_times[-1] + pd.DateOffset(months=max_lead_months-1),
                                   freq="MS") 
-        da = da.sel(member_id=all_member_ids, time=all_times) 
+        
+        # Use drop=False to prevent errors when some times don't exist in obs data
+        da = da.sel(member_id=all_member_ids, time=all_times, drop=False) 
         da_train_subset = da.sel(member_id=data_split_settings["train"])
         
     else:
@@ -158,8 +198,9 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
     if divide_by_stdev:
         print("calculating means and stdev...", end=" ")
 
-        monthly_means = da_train_subset.groupby("time.month").mean(dim=("time", "member_id")).load()
-        monthly_stdevs = da_train_subset.groupby("time.month").std(dim=("time", "member_id")).load()
+        # Use skipna to handle missing values in observational data
+        monthly_means = da_train_subset.groupby("time.month").mean(dim=("time", "member_id"), skipna=True).load()
+        monthly_stdevs = da_train_subset.groupby("time.month").std(dim=("time", "member_id"), skipna=True).load()
         print("done!")
 
         months = da['time'].dt.month
@@ -178,7 +219,7 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
         monthly_stdevs_ds = monthly_stdevs.to_dataset(name=var_name)
     else: 
         print("calculating means...", end=" ")
-        monthly_means = da_train_subset.groupby("time.month").mean(dim=("time", "member_id")).load()
+        monthly_means = da_train_subset.groupby("time.month").mean(dim=("time", "member_id"), skipna=True).load()
         print("done!")
 
         months = da['time'].dt.month
@@ -187,8 +228,8 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
         anom_ds = anom_da.to_dataset(name=var_name)
         monthly_means_ds = monthly_means.to_dataset(name=var_name)
 
-
     print("Saving...", end="")
+    os.makedirs(save_dir, exist_ok=True)
     write_nc_file(monthly_means_ds, os.path.join(save_dir, f"{var_name}_mean.nc"), overwrite)
     if divide_by_stdev: 
         write_nc_file(monthly_stdevs_ds, os.path.join(save_dir, f"{var_name}_stdev.nc"), overwrite)
@@ -196,7 +237,6 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
     else:
         write_nc_file(anom_ds, save_path, overwrite)
     print("done!")
-
 
 
 def load_inputs_data_da_dict(input_config, data_split_settings):
@@ -586,4 +626,4 @@ def calculate_monthly_weights(data_split_settings, use_softmax=True, T=2):
     else:
         weights = max(sia) / sia 
     
-    return weights 
+    return weights
