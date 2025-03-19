@@ -122,7 +122,7 @@ def anomaly_persistence(data_split_settings, save_dir, max_lead_time=6):
             return 
 
     # Load the data
-    ds = xr.open_dataset(f"{config_cesm.RAW_DATA_DIRECTORY}/icefrac/icefrac_combined.nc")
+    ds = xr.open_dataset(f"{config_cesm.RAW_DATA_DIRECTORY}/icefrac_combined.nc")
     if data_split_settings["split_by"] == "ensemble_member":
         ensemble_members = data_split_settings["test"]
         time_coords_test = data_split_settings["time_range"]
@@ -187,7 +187,7 @@ def climatology_predictions(data_split_settings, save_dir, max_lead_time=6):
             return 
 
     # Load the data
-    ds = xr.open_dataset(f"{config_cesm.RAW_DATA_DIRECTORY}/icefrac/icefrac_combined.nc")
+    ds = xr.open_dataset(f"{config_cesm.RAW_DATA_DIRECTORY}/icefrac_combined.nc")
     if data_split_settings["split_by"] == "ensemble_member":
         # use these ensemble_members and time_coords to calculate climatology over train subset
         ensemble_members = data_split_settings["train"]
