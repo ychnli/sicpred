@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 import argparse
 import importlib.util
 import xarray as xr
+import re
 from tqdm import tqdm  
 
 from src.models.models_util import CESM_Dataset
@@ -20,6 +21,16 @@ def load_config(config_path):
     spec.loader.exec_module(config)
     return config
 
+def nn_ens_members(config): 
+    """ Given a config file, returns a list of checkpoint files for trained ensemble members (diff training
+        initializations), using a regex """
+
+    files = os.listdir(os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME))
+    pattern = re.compile(
+        rf"{config.MODEL}_{config.EXPERIMENT_NAME}_member_\d+_{config.CHECKPOINT_TO_EVALUATE}\.pth"
+    )
+    return sum(1 for filename in file_list if pattern.match(filename))
+
 
 def main():
     parser = argparse.ArgumentParser(description="Train a model with specified config.")
@@ -31,12 +42,11 @@ def main():
 
     test_dataset = CESM_Dataset("test", config.DATA_SPLIT_SETTINGS)
     test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=2)
-
-    # Load the model and checkpoint
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     in_channels = util_cesm.get_num_input_channels(config.INPUT_CONFIG)
     out_channels = util_cesm.get_num_output_channels(config.MAX_LEAD_MONTHS, config.TARGET_CONFIG)
     
+    # Load model architecture
     if config.MODEL == "UNetRes3": 
         model = UNetRes3(in_channels=in_channels, 
                         out_channels=out_channels, 
@@ -44,17 +54,7 @@ def main():
     else: 
         raise NotImplementedError(f"Model {config.MODEL} not implemented.")
 
-    checkpoint_path = os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME,
-                                 f"{config.MODEL}_{config.EXPERIMENT_NAME}_{config.CHECKPOINT_TO_EVALUATE}.pth")
-
-    if not os.path.exists(checkpoint_path): 
-        raise FileNotFoundError(f"No checkpoint file found at {checkpoint_path}")
-
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
-    model.load_state_dict(checkpoint["model_state_dict"])
-    model.eval()
-
-    # Known dimensions
+    # Initialize an empty dataset 
     if config.DATA_SPLIT_SETTINGS["split_by"] == "ensemble_member":
         ensemble_members = config.DATA_SPLIT_SETTINGS["test"]
         time_coords = config.DATA_SPLIT_SETTINGS["time_range"]
@@ -65,42 +65,58 @@ def main():
     channels, x_dim, y_dim = config.MAX_LEAD_MONTHS, 80, 80
     reference_grid = util_cesm.generate_sps_grid()
 
+    # number of trained ensemble members (nn_member_id). Note that this is different than the
+    # member_id, which refers to the CESM ensemble member on which we are evaluating 
+    num_nn_members = len(nn_ens_members(config))
+
     # Initialize an empty xarray Dataset
     ds = xr.Dataset(
         {
             "predictions": (
-                ["start_prediction_month", "member_id", "lead_time", "y", "x"],
-                np.full((len(time_coords), num_members, channels, y_dim, x_dim), np.nan, dtype=np.float32)
+                ["start_prediction_month", "member_id", "nn_member_id", "lead_time", "y", "x"],
+                np.full((len(time_coords), num_members, num_nn_members, channels, y_dim, x_dim), 
+                        np.nan, dtype=np.float32)
             )
         },
         coords={
             "start_prediction_month": time_coords,
             "member_id": ensemble_members,
-            "lead_time": np.arange(1, channels+1),
+            "nn_member_id": np.arange(num_nn_members),
+            "lead_time": np.arange(1, channels + 1),
             "y": reference_grid.y.values,
             "x": reference_grid.x.values,
         }
     )
+    
+    for nn_member_idx, filename in enumerate(nn_ens_members(config)):
+        checkpoint_path = os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME, filename)
 
-    # Populate the Dataset with predictions
-    with torch.no_grad():
-        for i, batch in enumerate(tqdm(test_dataloader, desc="Evaluating", unit="sample")): 
-            inputs = batch["input"].to(device)
-            predictions = model(inputs).cpu().numpy()  # Move predictions to CPU
-            
-            # since batch size = 1, get the only sample in the batch
-            predictions = predictions[0]
+        if not os.path.exists(checkpoint_path): 
+            raise FileNotFoundError(f"No checkpoint file found at {checkpoint_path}")
 
-            # Extract metadata
-            start_year, start_month = batch["start_prediction_month"].cpu().numpy()[0,0]
-            start_prediction_month = pd.Timestamp(year=start_year, month=start_month, day=1)
-            member_id = batch["member_id"][0]
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        model.eval()
 
-            # Find the appropriate indices
-            time_idx = list(time_coords).index(start_prediction_month)
-            member_idx = list(ensemble_members).index(member_id)
+        # Populate the Dataset with predictions
+        with torch.no_grad():
+            for i, batch in enumerate(tqdm(test_dataloader, desc="Evaluating", unit="sample")): 
+                inputs = batch["input"].to(device)
+                predictions = model(inputs).cpu().numpy()  # Move predictions to CPU
+                
+                # since batch size = 1, get the only sample in the batch
+                predictions = predictions[0]
 
-            ds["predictions"][time_idx, member_idx, :, :, :] = predictions
+                # Extract metadata
+                start_year, start_month = batch["start_prediction_month"].cpu().numpy()[0,0]
+                start_prediction_month = pd.Timestamp(year=start_year, month=start_month, day=1)
+                member_id = batch["member_id"][0]
+
+                # Find the appropriate indices
+                time_idx = list(time_coords).index(start_prediction_month)
+                member_idx = list(ensemble_members).index(member_id)
+
+                ds["predictions"][time_idx, member_idx, nn_member_idx, :, :, :] = predictions
 
     # Save the Dataset as NetCDF
     output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config.EXPERIMENT_NAME)

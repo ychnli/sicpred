@@ -9,6 +9,7 @@ from tqdm import tqdm
 import argparse 
 import importlib.util
 import inspect
+import random
 
 from src.models.models_util import CESM_Dataset
 from src.models.models import UNetRes3
@@ -52,6 +53,16 @@ def train_epoch(model, dataloader, optimizer, loss_fn, device, epoch, total_epoc
 
     return epoch_loss / len(dataloader)
 
+def set_random_seed(seed):
+    """Set random seeds for ensemble generation"""
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
 def validate_epoch(model, dataloader, loss_fn, device, epoch, total_epochs):
     model.eval()
     epoch_loss = 0
@@ -80,81 +91,89 @@ def validate_epoch(model, dataloader, loss_fn, device, epoch, total_epochs):
 def main():
     parser = argparse.ArgumentParser(description="Train a model with specified config.")
     parser.add_argument("--config", type=str, required=True, help="Path to the configuration file (e.g., config.py)")
+    parser.add_argument("--members", type=int, default=1, help="Number of ensemble members to train (default = 1)")
+    parser.add_argument("--resume", action="store_true", help="Resume training from the latest checkpoint if available.")
     args = parser.parse_args()
     
     # Load configurations
     config = load_config(args.config)
 
-    # Initialize WandB
-    wandb.init(project="sea-ice-prediction", name=config.EXPERIMENT_NAME, 
-               notes=config.NOTES, mode="online")
+    for ensemble_id in range(args.members):
+        set_random_seed(ensemble_id * 100) 
 
-    # Data split settings
-    train_dataset = CESM_Dataset("train", config.DATA_SPLIT_SETTINGS)
-    val_dataset = CESM_Dataset("val", config.DATA_SPLIT_SETTINGS)
+        # Initialize WandB
+        wandb.init(project="sea-ice-prediction", 
+                   name=f"{config.EXPERIMENT_NAME}_member_{ensemble_id}",
+                   notes=config.NOTES, 
+                   mode="online")
 
-    train_dataloader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, shuffle=True, num_workers=2)
-    val_dataloader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=2)
+        # Data split settings
+        train_dataset = CESM_Dataset("train", config.DATA_SPLIT_SETTINGS)
+        val_dataset = CESM_Dataset("val", config.DATA_SPLIT_SETTINGS)
 
-    # Initialize model, optimizer, and loss function
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        train_dataloader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, shuffle=True, num_workers=2)
+        val_dataloader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=2)
 
-    in_channels = util_cesm.get_num_input_channels(config.INPUT_CONFIG)
-    out_channels = util_cesm.get_num_output_channels(config.MAX_LEAD_MONTHS, config.TARGET_CONFIG)
-    
-    if config.MODEL == "UNetRes3": 
-        model = UNetRes3(in_channels=in_channels, 
-                        out_channels=out_channels, 
-                        predict_anomalies=config.TARGET_CONFIG["predict_anom"]).to(device)
-    else: 
-        raise NotImplementedError(f"Model {config.MODEL} not implemented.")
-    
-    optimizer = Adam(model.parameters(), lr=config.LEARNING_RATE)
+        # Initialize model, optimizer, and loss function
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if config.LOSS_FUNCTION == "MSE": 
-        loss_fn = WeightedMSELoss(device=device, **config.LOSS_FUNCTION_ARGS)
-    
-    # Load a checkpoint if it exists
-    save_dir = os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME)
-    start_epoch = 1
-    total_epochs = config.NUM_EPOCHS
+        in_channels = util_cesm.get_num_input_channels(config.INPUT_CONFIG)
+        out_channels = util_cesm.get_num_output_channels(config.MAX_LEAD_MONTHS, config.TARGET_CONFIG)
+        
+        if config.MODEL == "UNetRes3": 
+            model = UNetRes3(in_channels=in_channels, 
+                            out_channels=out_channels, 
+                            predict_anomalies=config.TARGET_CONFIG["predict_anom"]).to(device)
+        else: 
+            raise NotImplementedError(f"Model {config.MODEL} not implemented.")
+        
+        optimizer = Adam(model.parameters(), lr=config.LEARNING_RATE)
 
-    # Check for an existing checkpoint
-    if os.path.exists(save_dir) and len(os.listdir(save_dir)) != 0:
-        latest_checkpoint_name = max([f for f in os.listdir(save_dir) if f.endswith(".pth")]) 
-        latest_epoch = int(latest_checkpoint_name.split("_")[-1].split(".")[0])
+        if config.LOSS_FUNCTION == "MSE": 
+            loss_fn = WeightedMSELoss(device=device, **config.LOSS_FUNCTION_ARGS)
+        
+        # Load a checkpoint if it exists
+        save_dir = os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME)
+        start_epoch = 1
+        total_epochs = config.NUM_EPOCHS
 
-        if latest_epoch < total_epochs:
-            checkpoint_path = os.path.join(save_dir, latest_checkpoint_name)
-            checkpoint = torch.load(checkpoint_path, weights_only=True)
-            model.load_state_dict(checkpoint["model_state_dict"])
-            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            start_epoch = checkpoint["epoch"]
-            print(f"Resuming training from epoch {start_epoch}.")
+        if args.resume and os.path.exists(save_dir) and len(os.listdir(save_dir)) != 0:
+            checkpoint_files = [f for f in os.listdir(save_dir) if f.endswith(".pth")]
+            if checkpoint_files:
+                latest_checkpoint_name = max(checkpoint_files, key=lambda x: int(x.split("_")[-1].split(".")[0]))
+                checkpoint_path = os.path.join(save_dir, latest_checkpoint_name)
+                checkpoint = torch.load(checkpoint_path, map_location=device)
+                model.load_state_dict(checkpoint["model_state_dict"])
+                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                start_epoch = checkpoint["epoch"] + 1
+                print(f"Resuming training from epoch {start_epoch}.")
 
-    os.makedirs(save_dir, exist_ok=True)
-    for epoch in range(start_epoch, total_epochs + 1):
-        train_loss = train_epoch(model, train_dataloader, optimizer, loss_fn, device, epoch, total_epochs)
-        val_loss = validate_epoch(model, val_dataloader, loss_fn, device, epoch, total_epochs)
+        # train model 
+        os.makedirs(save_dir, exist_ok=True)
+        for epoch in range(start_epoch, total_epochs + 1):
+            train_loss = train_epoch(model, train_dataloader, optimizer, loss_fn, device, epoch, total_epochs)
+            val_loss = validate_epoch(model, val_dataloader, loss_fn, device, epoch, total_epochs)
 
-        # Log metrics to WandB
-        wandb.log({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss})
+            # Log metrics to WandB
+            wandb.log({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss})
 
-        # Save a checkpoint
-        checkpoint_path = os.path.join(save_dir, f"{config.MODEL}_{config.EXPERIMENT_NAME}_epoch_{epoch}.pth")
-        if epoch % config.CHECKPOINT_INTERVAL == 0:
-            torch.save({
-                "epoch": epoch,
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-            }, checkpoint_path)
+            # Save a checkpoint
+            file_name = f"{config.MODEL}_{config.EXPERIMENT_NAME}_member_{ensemble_id}_epoch_{epoch}.pth"
+            checkpoint_path = os.path.join(save_dir, file_name)
+            if epoch % config.CHECKPOINT_INTERVAL == 0:
+                torch.save({
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                }, checkpoint_path)
 
-        print(f"Epoch {epoch} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
+            print(f"Epoch {epoch} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
 
-    # Save the final model
-    final_checkpoint_path = os.path.join(save_dir, f"{config.MODEL}_{config.EXPERIMENT_NAME}_final.pth")
-    torch.save(model.state_dict(), final_checkpoint_path)
-    wandb.finish()
+        # Save the final model
+        final_checkpoint_path = os.path.join(save_dir, 
+                                f"{config.MODEL}_{config.EXPERIMENT_NAME}_member_{ensemble_id}_final.pth")
+        torch.save(model.state_dict(), final_checkpoint_path)
+        wandb.finish()
 
 
 if __name__ == "__main__":
