@@ -87,19 +87,31 @@ def validate_epoch(model, dataloader, loss_fn, device, epoch, total_epochs):
     
     return epoch_loss / len(dataloader)
 
+def get_best_checkpoint(checkpoint_dir):
+    # Check for 'final' checkpoint first
+    checkpoint_files = [f for f in os.listdir(checkpoint_dir) if (f.endswith(".pth") and "final" not in f)]
+    
+    if len(checkpoint_files) == 0:
+        return None 
+    
+    latest_checkpoint_name = max(checkpoint_files, key=lambda x: int(x.split("_")[-1].split(".")[0])) 
+    return os.path.join(checkpoint_dir, latest_checkpoint_name)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Train a model with specified config.")
     parser.add_argument("--config", type=str, required=True, help="Path to the configuration file (e.g., config.py)")
     parser.add_argument("--members", type=int, default=1, help="Number of ensemble members to train (default = 1)")
-    parser.add_argument("--resume", action="store_true", help="Resume training from the latest checkpoint if available.")
+    parser.add_argument("--start_ens_id", type=int, default=0, help="Base seed (default = 0)")
+    parser.add_argument("--resume", type=int, default=0, help="Number of additional epochs to resume training from latest checkpoint.")
     args = parser.parse_args()
     
     # Load configurations
     config = load_config(args.config)
 
     for ensemble_id in range(args.members):
-        set_random_seed(ensemble_id * 100) 
+        ensemble_id = args.start_ens_id + ensemble_id
+        set_random_seed((ensemble_id) * 100) 
 
         # Initialize WandB
         wandb.init(project="sea-ice-prediction", 
@@ -136,17 +148,20 @@ def main():
         save_dir = os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME)
         start_epoch = 1
         total_epochs = config.NUM_EPOCHS
+        if args.resume > 0:
+            if os.path.exists(save_dir) and len(os.listdir(save_dir)) != 0:
+                checkpoint_path = get_best_checkpoint(save_dir)
+                if checkpoint_path:
+                    checkpoint = torch.load(checkpoint_path, map_location=device)
+                    model.load_state_dict(checkpoint["model_state_dict"])
+                    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                    start_epoch = checkpoint["epoch"] + 1
+                    total_epochs = start_epoch + args.resume - 1
+                    print(f"Resuming training from epoch {start_epoch} for {args.resume} additional epochs.")
+            else:
+                print("No checkpoint found to resume from.")
+                return
 
-        if args.resume and os.path.exists(save_dir) and len(os.listdir(save_dir)) != 0:
-            checkpoint_files = [f for f in os.listdir(save_dir) if f.endswith(".pth")]
-            if checkpoint_files:
-                latest_checkpoint_name = max(checkpoint_files, key=lambda x: int(x.split("_")[-1].split(".")[0]))
-                checkpoint_path = os.path.join(save_dir, latest_checkpoint_name)
-                checkpoint = torch.load(checkpoint_path, map_location=device)
-                model.load_state_dict(checkpoint["model_state_dict"])
-                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-                start_epoch = checkpoint["epoch"] + 1
-                print(f"Resuming training from epoch {start_epoch}.")
 
         # train model 
         os.makedirs(save_dir, exist_ok=True)
