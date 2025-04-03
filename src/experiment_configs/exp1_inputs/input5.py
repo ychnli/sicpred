@@ -132,5 +132,5 @@ NUM_EPOCHS = 10
 CHECKPOINT_INTERVAL = 1
 
 ############################# evaluation configs #############################
-CHECKPOINT_TO_EVALUATE = "epoch_5"
+CHECKPOINT_TO_EVALUATE = "epoch_10"
 
