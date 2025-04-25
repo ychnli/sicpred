@@ -25,11 +25,8 @@ class CESM_Dataset(torch.utils.data.Dataset):
     def __init__(self, split, data_split_settings):
         """
         Param:
-            (string)        data_dir (preprocessed model-ready data)
-            (list)          ensemble_members (ripf notation)
             (string)        split ('test', 'val', or 'train')
             (dict)          data_split_settings
-            (callable)      optional transform
 
         """
 

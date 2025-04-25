@@ -29,12 +29,12 @@ def nn_ens_members(config):
     pattern = re.compile(
         rf"{config.MODEL}_{config.EXPERIMENT_NAME}_member_\d+_{config.CHECKPOINT_TO_EVALUATE}\.pth"
     )
-    return sum(1 for filename in file_list if pattern.match(filename))
-
+    return sorted([filename for filename in files if pattern.match(filename)])
 
 def main():
     parser = argparse.ArgumentParser(description="Train a model with specified config.")
     parser.add_argument("--config", type=str, required=True, help="Path to the configuration file (e.g., config.py)")
+    parser.add_argument("--device", type=str, help="cuda or cpu")
     args = parser.parse_args()
     
     # Load configurations
@@ -42,7 +42,10 @@ def main():
 
     test_dataset = CESM_Dataset("test", config.DATA_SPLIT_SETTINGS)
     test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=2)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if args.device in ["cuda", "cpu"]: 
+        device = torch.device(args.device) 
+    else: 
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     in_channels = util_cesm.get_num_input_channels(config.INPUT_CONFIG)
     out_channels = util_cesm.get_num_output_channels(config.MAX_LEAD_MONTHS, config.TARGET_CONFIG)
     
@@ -94,6 +97,7 @@ def main():
         if not os.path.exists(checkpoint_path): 
             raise FileNotFoundError(f"No checkpoint file found at {checkpoint_path}")
 
+        print(f"Evaluating checkpoint at {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
         model.load_state_dict(checkpoint["model_state_dict"])
         model.eval()

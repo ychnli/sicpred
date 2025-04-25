@@ -142,7 +142,7 @@ def main():
         optimizer = Adam(model.parameters(), lr=config.LEARNING_RATE)
 
         if config.LOSS_FUNCTION == "MSE": 
-            loss_fn = WeightedMSELoss(device=device, **config.LOSS_FUNCTION_ARGS)
+            loss_fn = WeightedMSELoss(device=device, model=model, **config.LOSS_FUNCTION_ARGS)
         
         # Load a checkpoint if it exists
         save_dir = os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME)

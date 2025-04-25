@@ -13,11 +13,12 @@ class WeightedMSELoss(nn.Module):
     Modification of standard MSE loss that allows for weighting by month and area
     """
 
-    def __init__(self, device, 
+    def __init__(self, device, model, 
                  apply_month_weights=True,
                  monthly_weights=None, 
                  apply_area_weights=True, 
-                 scale_factor=1):
+                 scale_factor=1, 
+                 l2_lambda=0):
         
         super(WeightedMSELoss, self).__init__()
         
@@ -25,6 +26,7 @@ class WeightedMSELoss(nn.Module):
             assert monthly_weights is not None, "Dict of settings for generating monthly weights must be provided if month weighting is enabled"
 
         self.device = device
+        self.model = model
         self.apply_month_weights = apply_month_weights
         if apply_month_weights:
             monthly_weights_np = util_cesm.calculate_monthly_weights(**monthly_weights)
@@ -34,6 +36,7 @@ class WeightedMSELoss(nn.Module):
             area_weights = util_cesm.calculate_area_weights()
             self.area_weights = torch.from_numpy(area_weights).to(device)
         self.scale_factor = scale_factor
+        self.l2_lambda = l2_lambda
     
 
     def forward(self, prediction, target, target_months):
@@ -47,11 +50,14 @@ class WeightedMSELoss(nn.Module):
         if self.apply_area_weights:
             diff *= self.area_weights 
         
-        loss = torch.mean(diff ** 2)
+        mse_loss = torch.mean(diff ** 2) * self.scale_factor
 
-        loss *= self.scale_factor
-
-        return loss
+        # L2 regularization term 
+        if self.l2_lambda != 0: 
+            reg_loss = self.l2_lambda * sum(torch.sum(param ** 2) for param in self.model.parameters() if param.requires_grad)
+            return mse_loss + reg_loss 
+        
+        return mse_loss
         
 
 class CategoricalFocalLoss(nn.Module):
