@@ -72,6 +72,51 @@ def normalize(x, m, s, var_name=None):
     return normalized
 
 
+def detrend_quadratic(da, time_dim='time'):
+    time_vals = da[time_dim].dt.year + da[time_dim].dt.month / 12.0
+    time_numeric = xr.DataArray(time_vals, coords={time_dim: da[time_dim]}, dims=time_dim)
+
+    spatial_dims = [d for d in da.dims if d not in [time_dim, 'member_id']]
+    da_stacked = da.stack(space=spatial_dims)
+    detrended = da_stacked.copy()
+
+    coeffs_all = []
+
+    for month in range(1, 13):
+        sel = da_stacked[time_dim].dt.month == month
+        if not sel.any(): continue
+
+        t = time_numeric.sel({time_dim: sel})
+        Y = da_stacked.sel({time_dim: sel}).mean('member_id')
+        X = np.stack([np.ones_like(t), t, t**2], axis=1)
+
+        beta = np.linalg.solve(X.T @ X, X.T @ Y.values)  # (3, space)
+        coeffs_all.append((month, beta))
+
+        trend = xr.DataArray((X @ beta).astype(Y.dtype), coords=Y.coords, dims=Y.dims)
+        detrended.loc[{time_dim: sel}] = da_stacked.sel({time_dim: sel}) - trend
+
+    detrended_unstacked = detrended.unstack('space')
+
+    # Build coeff DataArray
+    coeffs = np.full((12, 3) + (da_stacked.sizes['space'],), np.nan, dtype=da.dtype)
+    for month, beta in coeffs_all:
+        coeffs[month - 1] = beta 
+
+    coeff_da = xr.DataArray(
+        coeffs,
+        dims=('month', 'coeff', 'space'),
+        coords={
+            'month': np.arange(1, 13),
+            'coeff': ['const', 'linear', 'quadratic'],
+            'space': da_stacked.coords['space']
+        }
+    ).unstack('space')
+
+    return detrended_unstacked, coeff_da
+
+
+
 def get_start_prediction_months(data_split_settings):
     """
     Get the start prediction months for the data split settings. 
@@ -88,7 +133,8 @@ def get_start_prediction_months(data_split_settings):
 
 
 def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_months=6,
-                    overwrite=False, verbose=1, divide_by_stdev=True):
+                    overwrite=False, verbose=1, divide_by_stdev=False, use_min_max=True, 
+                    detrend=True):
     """ 
     Normalize inputs based on statistics of the training data and save. 
 
@@ -99,7 +145,14 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
         (int)       verbose  
         (bool)      divide_by_stdev: if True, computes (x - mu)/(sigma)
                                      if False, computes (x - mu)  
+        (bool)      use_min_max: if True, computes (x - min(x))/(max(x) - min(x))
+        (bool)      detrend: if True, detrends using quadratic least squares fit
+    
+    Note that use_min_max and divide_by_stdev should not both be set to true
     """
+
+    if divide_by_stdev and use_min_max:
+        raise ValueError("divide_by_stdev and use_min_max should not both be set to true")
 
     save_dir = os.path.join(config.PROCESSED_DATA_DIRECTORY, "normalized_inputs", data_split_settings["name"])
     save_path = os.path.join(save_dir, f"{var_name}_norm.nc")
@@ -173,28 +226,53 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
             dask="allowed"
         )
         
-        normalized_ds = normalized_da.to_dataset(name=var_name)
         monthly_means_ds = monthly_means.to_dataset(name=var_name)
         monthly_stdevs_ds = monthly_stdevs.to_dataset(name=var_name)
     else: 
-        print("calculating means...", end=" ")
-        monthly_means = da_train_subset.groupby("time.month").mean(dim=("time", "member_id")).load()
+        if use_min_max:
+            print("calculating min and max...", end=" ")
+            monthly_mins = da_train_subset.groupby("time.month").min(dim=("time", "member_id")).load()
+            monthly_maxs = da_train_subset.groupby("time.month").max(dim=("time", "member_id")).load()
+            print("done!")
+
+            months = da['time'].dt.month
+            normalized_da = (da - monthly_mins.sel(month=months)) / (monthly_maxs.sel(month=months) - monthly_mins.sel(month=months))
+
+            monthly_mins_ds = monthly_mins.to_dataset(name=var_name)
+            monthly_maxs_ds = monthly_maxs.to_dataset(name=var_name)
+
+        else:
+            print("calculating means...", end=" ")
+            monthly_means = da_train_subset.groupby("time.month").mean(dim=("time", "member_id")).load()
+            print("done!")
+
+            months = da['time'].dt.month
+            normalized_da = da - monthly_means.sel(month=months)
+            
+            monthly_means_ds = monthly_means.to_dataset(name=var_name)
+
+    if detrend:
+        print("detrending data with quadratic fit...", end=" ")
+        normalized_da, coeffs = detrend_quadratic(normalized_da)
+        write_nc_file(coeffs.to_dataset(name=var_name), 
+                      os.path.join(save_dir, f"{var_name}_detrend_coeffs.nc"), overwrite)
         print("done!")
 
-        months = da['time'].dt.month
-        anom_da = da - monthly_means.sel(month=months)
-        
-        anom_ds = anom_da.to_dataset(name=var_name)
-        monthly_means_ds = monthly_means.to_dataset(name=var_name)
-
+    normalized_ds = normalized_da.to_dataset(name=var_name)
 
     print("Saving...", end="")
-    write_nc_file(monthly_means_ds, os.path.join(save_dir, f"{var_name}_mean.nc"), overwrite)
     if divide_by_stdev: 
         write_nc_file(monthly_stdevs_ds, os.path.join(save_dir, f"{var_name}_stdev.nc"), overwrite)
         write_nc_file(normalized_ds, save_path, overwrite)
+        write_nc_file(monthly_means_ds, os.path.join(save_dir, f"{var_name}_mean.nc"), overwrite)
     else:
-        write_nc_file(anom_ds, save_path, overwrite)
+        if use_min_max:
+            write_nc_file(monthly_mins_ds, os.path.join(save_dir, f"{var_name}_min.nc"), overwrite)
+            write_nc_file(monthly_maxs_ds, os.path.join(save_dir, f"{var_name}_max.nc"), overwrite)
+            write_nc_file(normalized_ds, save_path, overwrite)
+        else:
+            write_nc_file(normalized_ds, save_path, overwrite)
+            write_nc_file(monthly_means_ds, os.path.join(save_dir, f"{var_name}_mean.nc"), overwrite)
     print("done!")
 
 

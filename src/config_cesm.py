@@ -13,6 +13,8 @@ MODEL_DIRECTORY = '/scratch/users/yucli/sicpred_models'
 
 PREDICTIONS_DIRECTORY = '/scratch/users/yucli/sicpred_model_predictions'
 
+ANALYSIS_RESULTS_DIRECTORY = '/oak/stanford/groups/earlew/yuchen/sicpred/analysis_results'
+
 # all renamed variables 
 ALL_VAR_NAMES = ["icefrac", "icethick", "temp", "geopotential", "psl", "lw_flux", "sw_flux", "ua"]
 
