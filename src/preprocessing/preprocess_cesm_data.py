@@ -39,7 +39,7 @@ def main():
     for var_name in config.INPUT_CONFIG.keys():
         if config.INPUT_CONFIG[var_name]['include'] and config.INPUT_CONFIG[var_name]['norm']:
             divide_by_stdev = config.INPUT_CONFIG[var_name]['divide_by_stdev']
-            use_min_max = config.USE_MIN_MAX 
+            use_min_max = config.INPUT_CONFIG[var_name]['use_min_max']
             util_cesm.normalize_data(var_name, config.DATA_SPLIT_SETTINGS,
                                     max_lag_months=config.INPUT_CONFIG[var_name]["lag"],
                                     max_lead_months=config.MAX_LEAD_MONTHS,

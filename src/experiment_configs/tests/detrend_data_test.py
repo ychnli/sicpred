@@ -30,16 +30,16 @@ avail_ens_members = ['r10i1181p1f1', 'r10i1231p1f1', 'r10i1251p1f1', 'r10i1281p1
        'r20i1281p1f2', 'r20i1301p1f2']
 
 ################################ description ################################
-EXPERIMENT_NAME = "exp1_input4"
-NOTES = "Previous 12 months of sea ice + land mask and sin() and cos() of month \
-     + 12 months of SST + atmospheric vars"
+EXPERIMENT_NAME = "detrend_data_test"
+NOTES = "Previous 12 months of sea ice + land mask and sin() and cos() of month + 6 months of SST. \
+    Test L2 regularization with lambda=1e-4 and min-max normalization"
 DATE = "" # optional 
 
 ################################ data configs ################################
 
 MAX_LEAD_MONTHS = 6
 
-DATA_CONFIG_NAME = "seaice_plus_temp_plus_atm_minmax"
+DATA_CONFIG_NAME = "detrend_data_test"
 
 """
 data_split_settings should be a dict with keys split_by, train, val, and test
@@ -57,7 +57,7 @@ and you should specify the time range to use
 DATA_SPLIT_SETTINGS = {
     "name": DATA_CONFIG_NAME, 
     "split_by": "ensemble_member",
-    "train": avail_ens_members[0:8], 
+    "train": avail_ens_members[0:2], 
     "val": avail_ens_members[8:10],
     "test": avail_ens_members[10:12],
     "time_range": pd.date_range("1851-01", "2013-12", freq="MS"),

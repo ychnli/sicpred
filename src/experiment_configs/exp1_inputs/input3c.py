@@ -30,16 +30,15 @@ avail_ens_members = ['r10i1181p1f1', 'r10i1231p1f1', 'r10i1251p1f1', 'r10i1281p1
        'r20i1281p1f2', 'r20i1301p1f2']
 
 ################################ description ################################
-EXPERIMENT_NAME = "exp1_input4"
-NOTES = "Previous 12 months of sea ice + land mask and sin() and cos() of month \
-     + 12 months of SST + atmospheric vars"
+EXPERIMENT_NAME = "exp1_input3b"
+NOTES = "Previous 12 months of sea ice + land mask and sin() and cos() of month + 6 months of z500"
 DATE = "" # optional 
 
 ################################ data configs ################################
 
 MAX_LEAD_MONTHS = 6
 
-DATA_CONFIG_NAME = "seaice_plus_temp_plus_atm_minmax"
+DATA_CONFIG_NAME = "seaice_plus_z500_minmax"
 
 """
 data_split_settings should be a dict with keys split_by, train, val, and test
@@ -75,11 +74,11 @@ INPUT_CONFIG = {
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'temp': {
-        'include': True, 'norm': True, 'land_mask': True, 'lag': 6, 
+        'include': False, 'norm': True, 'land_mask': True, 'lag': 6, 
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'geopotential': {
-        'include': False, 'norm': True, 'land_mask': False, 'lag': 6, 
+        'include': True, 'norm': True, 'land_mask': False, 'lag': 6, 
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'psl': {
