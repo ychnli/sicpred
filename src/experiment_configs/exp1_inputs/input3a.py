@@ -58,7 +58,7 @@ DATA_SPLIT_SETTINGS = {
     "split_by": "ensemble_member",
     "train": avail_ens_members[0:8], 
     "val": avail_ens_members[8:10],
-    "test": avail_ens_members[10:12],
+    "test": avail_ens_members[12:16],
     "time_range": pd.date_range("1851-01", "2013-12", freq="MS"),
     "member_ids": None
 }

@@ -30,7 +30,7 @@ avail_ens_members = ['r10i1181p1f1', 'r10i1231p1f1', 'r10i1251p1f1', 'r10i1281p1
        'r20i1281p1f2', 'r20i1301p1f2']
 
 ################################ description ################################
-EXPERIMENT_NAME = "exp1_input3a"
+EXPERIMENT_NAME = "exp1_input3b"
 NOTES = "Previous 12 months of sea ice + land mask and sin() and cos() of month + 6 months of psl"
 DATE = "" # optional 
 
@@ -58,7 +58,7 @@ DATA_SPLIT_SETTINGS = {
     "split_by": "ensemble_member",
     "train": avail_ens_members[0:8], 
     "val": avail_ens_members[8:10],
-    "test": avail_ens_members[10:12],
+    "test": avail_ens_members[12:16],
     "time_range": pd.date_range("1851-01", "2013-12", freq="MS"),
     "member_ids": None
 }
