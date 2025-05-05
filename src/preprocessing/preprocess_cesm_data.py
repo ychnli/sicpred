@@ -12,20 +12,30 @@ import pickle
 from src.utils import util_cesm
 from src import config_cesm
 
+problematic_member_id = ['r2i1231p1f1', 'r4i1231p1f1', 'r5i1231p1f1', 'r6i1231p1f1', 'r7i1231p1f1']
+
 def load_config(config_path):
     spec = importlib.util.spec_from_file_location("config", config_path)
     config = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(config)
     return config
 
+def check_for_sst_issue(config):
+    member_ids = config.DATA_SPLIT_SETTINGS["test"] + config.DATA_SPLIT_SETTINGS["val"] + config.DATA_SPLIT_SETTINGS["train"]
+    if len(set(member_ids) & set(problematic_member_id)) != 0:
+        if config.INPUT_CONFIG["temp"]["include"]:
+            raise ValueError("this data split contains ensemble members with corrupted SST")
 
 def main():
     parser = argparse.ArgumentParser(description="prepare data with specified config")
     parser.add_argument("--config", type=str, required=True, help="Path to the configuration file (e.g., config.py)")
+    parser.add_argument("--overwrite", action="store_true", help="If set, overwrite existing files.")
+
     args = parser.parse_args()
 
     # load the config variables
     config = load_config(args.config)
+    check_for_sst_issue(config) 
 
     # create directories for saving processed data
     os.makedirs(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", config.DATA_CONFIG_NAME), exist_ok=True)
@@ -43,7 +53,7 @@ def main():
             util_cesm.normalize_data(var_name, config.DATA_SPLIT_SETTINGS,
                                     max_lag_months=config.INPUT_CONFIG[var_name]["lag"],
                                     max_lead_months=config.MAX_LEAD_MONTHS,
-                                    overwrite=False, verbose=2, divide_by_stdev=divide_by_stdev, 
+                                    overwrite=args.overwrite, verbose=2, divide_by_stdev=divide_by_stdev, 
                                     use_min_max=use_min_max)
 
     print("done! \n\n")
