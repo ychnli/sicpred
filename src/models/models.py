@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from torch.nn.utils import weight_norm
 
 from src import config
 from src import config_cesm
@@ -429,3 +430,224 @@ class UNetRes4(UNetRes3):
 
         return output
 
+
+class Convblock(nn.Module):
+    def __init__(self,in_channel,out_channel):
+        super(Convblock,self).__init__()
+        self.out_c = out_channel
+        self.in_c = in_channel
+        self.conv2d = nn.Conv2d(self.in_c,self.out_c,3,stride=1,padding=1)
+        self.batchnorm = nn.BatchNorm2d(out_channel)
+        self.relu = nn.ReLU()
+
+    def forward(self,x):
+        x = self.conv2d(x)
+        x = self.batchnorm(x)
+        x = self.relu(x)
+        return x
+
+class Chomp1d(nn.Module):
+    def __init__(self, chomp_size):
+        super(Chomp1d, self).__init__()
+        self.chomp_size = chomp_size
+
+    def forward(self, x):
+        if self.chomp_size != 0:
+            x = x[:, :, :-self.chomp_size].contiguous()
+        else: x 
+        return x
+
+class TemporalBlock(nn.Module):
+    def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, padding):
+        super(TemporalBlock, self).__init__()
+        self.conv1 = weight_norm(nn.Conv1d(n_inputs, n_outputs, kernel_size,
+                                           stride=stride, padding=padding, dilation=dilation))
+        self.chomp1 = Chomp1d(padding)
+        self.relu1 = nn.ReLU()
+
+        self.conv2 = weight_norm(nn.Conv1d(n_outputs, n_outputs, kernel_size,
+                                           stride=stride, padding=padding, dilation=dilation))
+        self.chomp2 = Chomp1d(padding)
+        self.relu2 = nn.ReLU()
+
+        self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1,
+                                 self.conv2, self.chomp2, self.relu2)
+        self.downsample = nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
+        self.relu = nn.ReLU()
+        self.init_weights()
+
+    def init_weights(self):
+        self.conv1.weight.data.normal_(0, 0.01)
+        self.conv2.weight.data.normal_(0, 0.01)
+        if self.downsample is not None:
+            self.downsample.weight.data.normal_(0, 0.01)
+
+    def forward(self, x):
+        out = self.net(x)
+        res = x if self.downsample is None else self.downsample(x)
+        return self.relu(out + res)
+
+class TCN(nn.Module):
+    def __init__(self, num_inputs, num_channels, kernel_size):
+        super(TCN, self).__init__()
+        layers = []
+        num_levels = len(num_channels)
+        for i in range(num_levels):
+            dilation_size = 2 ** i
+            in_channels = num_inputs if i == 0 else num_channels[i-1]
+            out_channels = num_channels[i]
+            layers += [TemporalBlock(in_channels, out_channels, kernel_size, stride=1, dilation=dilation_size,
+                                     padding=(kernel_size-1) * dilation_size)]
+
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.network(x)
+
+class TSAM(nn.Module):
+    def __init__(self, channels):
+        super(TSAM, self).__init__()
+        self.channels = channels
+        kernel_size_tcn = max(channels // 12, 1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+
+        self.max_tcn1 = TCN(num_inputs = 1, num_channels = [8,8,8], kernel_size = channels//12)
+        self.max_tcn2 = TCN(num_inputs = 8, num_channels = [8,8,8], kernel_size = channels//12)
+        self.max_tcn3 = TCN(num_inputs = 8, num_channels = [1,1], kernel_size = 1)
+        self.avg_tcn1 = TCN(num_inputs = 1, num_channels = [8,8,8], kernel_size = channels//12)
+        self.avg_tcn2 = TCN(num_inputs = 8, num_channels = [8,8,8], kernel_size = channels//12)
+        self.avg_tcn3 = TCN(num_inputs = 8, num_channels = [1,1], kernel_size= 1)
+        self.spatial_conv = nn.Conv2d(2, 1, kernel_size=7, padding=3, bias=False)
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        max_pooled = self.max_pool(x)
+
+        avg_pooled = self.avg_pool(x)
+
+        max_out = self.max_tcn3(self.max_tcn2(self.max_tcn1(torch.squeeze(max_pooled,-1).permute(0,2,1)))).permute(0,2,1)
+        avg_out = self.avg_tcn3(self.avg_tcn2(self.avg_tcn1(torch.squeeze(avg_pooled,-1).permute(0,2,1)))).permute(0,2,1)
+
+        tcn_out = max_out + avg_out
+        tcn_attention = self.sigmoid(tcn_out.unsqueeze(-1))
+        x = tcn_attention * x
+
+        max_pool = torch.max(x, dim=1, keepdim=True)[0]
+        avg_pool = torch.mean(x, dim=1, keepdim=True)
+        pool_cat = torch.cat([max_pool, avg_pool], dim=1)
+        spatial_attention = self.spatial_conv(pool_cat)
+
+        x = x * self.sigmoid(spatial_attention)
+
+        return x
+
+class CNNTSAMBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, T):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.tsam = TSAM(T)
+
+    def forward(self, x):
+        x = F.relu(self.bn(self.conv(x)))
+        return self.tsam(x)
+
+class ResNetTSAMBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, T):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.tsam = TSAM(T)
+        self.need_proj = in_channels != out_channels
+        if self.need_proj:
+            self.proj = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+
+    def forward(self, x):
+        identity = x
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out = self.tsam(out)
+        if self.need_proj:
+            identity = self.proj(identity)
+        return F.relu(out + identity)
+
+class SICNet(nn.Module):
+    def __init__(self, T, T_pred, base_channels, clip_near_zero_values=True, epsilon=0.01):
+        super().__init__()
+        base = base_channels
+        self.T, self.T_pred = T, T_pred
+        self.clip_near_zero_values = clip_near_zero_values
+        self.epsilon = epsilon
+
+        self.enc1 = CNNTSAMBlock(T, base*2, T)
+        self.pool1 = nn.MaxPool2d(2)
+        self.enc2 = nn.Sequential(
+            ResNetTSAMBlock(base*2, base*4, T), ResNetTSAMBlock(base*4, base*4, T))
+
+        self.pool2 = nn.MaxPool2d(2)
+        self.enc3 = nn.Sequential(
+            ResNetTSAMBlock(base*4, base*6, T), ResNetTSAMBlock(base*6, base*6, T))
+
+        self.pool3 = nn.MaxPool2d(2)
+        self.enc4 = nn.Sequential(
+            ResNetTSAMBlock(base*6, base*8, T), ResNetTSAMBlock(base*8, base*8, T))
+
+        self.pool4 = nn.MaxPool2d(2)
+        self.enc5 = nn.Sequential(
+            ResNetTSAMBlock(base*8, base*10, T), ResNetTSAMBlock(base*10, base*10, T))
+
+        self.up4 = nn.Upsample(scale_factor=2, mode='nearest')
+        self.dec4 = ResNetTSAMBlock(base*10 + base*8, base*8, T)
+        self.up3 = nn.Upsample(scale_factor=2, mode='nearest')
+        self.dec3 = ResNetTSAMBlock(base*8 + base*6, base*6, T)
+        self.up2 = nn.Upsample(scale_factor=2, mode='nearest')
+        self.dec2 = ResNetTSAMBlock(base*6 + base*4, base*4, T)
+        self.up1 = nn.Upsample(scale_factor=2, mode='nearest')
+        self.dec1 = ResNetTSAMBlock(base*4 + base*2, base*2, T)
+
+        self.out_conv = nn.Conv2d(base*2, T_pred, kernel_size=1)
+
+        land_mask = self.create_inverted_land_mask()
+        self.register_buffer("land_mask", land_mask)
+
+    def create_inverted_land_mask(self):
+        try: 
+            ds = xr.open_dataset(os.path.join(config_cesm.DATA_DIRECTORY, "cesm_lens/grids/icefrac_land_mask.nc"))
+        except:
+            raise Exception("Uh oh, seems like you still need to run the preprocess script to generate \
+                an icefrac land mask. See src/util_cesm for the function")
+
+        mask = ~ds.mask.values.astype(bool)  # invert land mask
+        return torch.from_numpy(mask).float().unsqueeze(0).repeat(self.T_pred, 1, 1)
+
+    def forward(self, x):  # x: (N, T, H, W)
+        e1 = self.enc1(x)
+        p1 = self.pool1(e1)
+        e2 = self.enc2(p1)
+        p2 = self.pool2(e2)
+        e3 = self.enc3(p2)
+        p3 = self.pool3(e3)
+        e4 = self.enc4(p3)
+        p4 = self.pool4(e4)
+        e5 = self.enc5(p4)
+
+        d4 = self.up4(e5)
+        d4 = self.dec4(torch.cat([d4, e4], dim=1))
+        d3 = self.up3(d4)
+        d3 = self.dec3(torch.cat([d3, e3], dim=1))
+        d2 = self.up2(d3)
+        d2 = self.dec2(torch.cat([d2, e2], dim=1))
+        d1 = self.up1(d2)
+        d1 = self.dec1(torch.cat([d1, e1], dim=1))
+
+        out = torch.tanh(self.out_conv(d1))  # (N, T_pred, H, W)
+
+        if self.clip_near_zero_values:
+            out = out.where(out.abs() > self.epsilon, 0)
+
+        out = out * self.land_mask.unsqueeze(0)  # (1, T_pred, H, W)
+        return out

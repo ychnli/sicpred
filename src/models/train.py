@@ -13,6 +13,7 @@ import random
 
 from src.models.models_util import CESM_Dataset
 from src.models.models import UNetRes3
+from src.models.models import SICNet
 from src.utils import util_cesm
 from src import config_cesm
 from src.models.losses import WeightedMSELoss
@@ -117,7 +118,8 @@ def main():
         wandb.init(project="sea-ice-prediction", 
                    name=f"{config.EXPERIMENT_NAME}_member_{ensemble_id}",
                    notes=config.NOTES, 
-                   mode="online")
+                   mode="online", 
+                   config={"lr": config.LEARNING_RATE, "batch_size": config.BATCH_SIZE})
 
         # Data split settings
         train_dataset = CESM_Dataset("train", config.DATA_SPLIT_SETTINGS)
@@ -136,6 +138,8 @@ def main():
             model = UNetRes3(in_channels=in_channels, 
                             out_channels=out_channels, 
                             predict_anomalies=config.TARGET_CONFIG["predict_anom"]).to(device)
+        elif config.MODEL == "SICNet":
+            model = SICNet(T=in_channels, T_pred=out_channels, base_channels=32).to(device)
         else: 
             raise NotImplementedError(f"Model {config.MODEL} not implemented.")
         

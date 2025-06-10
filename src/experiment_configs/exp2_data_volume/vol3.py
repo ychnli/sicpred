@@ -30,15 +30,15 @@ avail_ens_members = ['r10i1181p1f1', 'r10i1231p1f1', 'r10i1251p1f1', 'r10i1281p1
        'r20i1281p1f2', 'r20i1301p1f2']
 
 ################################ description ################################
-EXPERIMENT_NAME = "exp2_vol3"
-NOTES = "Inputs: same as input2. Data volume: 16 ens members"
+EXPERIMENT_NAME = "exp2_vol3_dt"
+NOTES = "Inputs: same as input2. Data volume: 16 ens members. Detrended data"
 DATE = "" # optional 
 
 ################################ data configs ################################
 
 MAX_LEAD_MONTHS = 6
 
-DATA_CONFIG_NAME = "seaice_plus_auxiliary_vol3"
+DATA_CONFIG_NAME = "seaice_plus_auxiliary_vol3_dt"
 
 """
 data_split_settings should be a dict with keys split_by, train, val, and test
@@ -67,35 +67,35 @@ DATA_SPLIT_SETTINGS = {
 INPUT_CONFIG = {
     'icefrac': {
         'include': True, 'norm': True, 'land_mask': True, 'lag': 12, 
-        'divide_by_stdev': False, 'auxiliary': False
+        'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': False
     }, 
     'icethick': {
         'include': False, 'norm': True, 'land_mask': True, 'lag': 12, 
-        'divide_by_stdev': False, 'auxiliary': False
+        'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'temp': {
         'include': False, 'norm': True, 'land_mask': True, 'lag': 12, 
-        'divide_by_stdev': True, 'auxiliary': False
+        'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'geopotential': {
         'include': False, 'norm': True, 'land_mask': False, 'lag': 6, 
-        'divide_by_stdev': True, 'auxiliary': False
+        'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'psl': {
         'include': False, 'norm': True, 'land_mask': False, 'lag': 6, 
-        'divide_by_stdev': True, 'auxiliary': False
+        'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'lw_flux': {
         'include': False, 'norm': True, 'land_mask': False, 'lag': 3, 
-        'divide_by_stdev': True, 'auxiliary': False
+        'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'sw_flux': {
         'include': False, 'norm': True, 'land_mask': False, 'lag': 3, 
-        'divide_by_stdev': True, 'auxiliary': False
+        'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'ua': {
         'include': False, 'norm': True, 'land_mask': False, 'lag': 3, 
-        'divide_by_stdev': True, 'auxiliary': False
+        'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'cosine_of_init_month': {
         'include': True, 'norm': False, 'auxiliary': True
@@ -127,7 +127,7 @@ LOSS_FUNCTION_ARGS = {
 ############################# training configs ##############################
 LEARNING_RATE = 1e-3
 BATCH_SIZE = 64
-NUM_EPOCHS = 10
+NUM_EPOCHS = 20
 CHECKPOINT_INTERVAL = 1
 
 ############################# evaluation configs #############################
