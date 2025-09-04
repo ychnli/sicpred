@@ -69,10 +69,10 @@ def main():
     model_data_save_path = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.DATA_CONFIG_NAME)
     os.makedirs(model_data_save_path, exist_ok=True)
 
-    util_cesm.save_inputs_files(config.INPUT_CONFIG, model_data_save_path, config.DATA_SPLIT_SETTINGS)
+    util_cesm.save_inputs_files(config.INPUT_CONFIG, model_data_save_path, config.DATA_SPLIT_SETTINGS, overwrite=args.overwrite)
 
     util_cesm.save_targets_files(config.INPUT_CONFIG, config.TARGET_CONFIG, model_data_save_path,
-                                 config.MAX_LEAD_MONTHS, config.DATA_SPLIT_SETTINGS)
+                                 config.MAX_LEAD_MONTHS, config.DATA_SPLIT_SETTINGS, overwrite=args.overwrite)
     print("all done! \n\n")
 
 

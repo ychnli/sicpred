@@ -125,8 +125,8 @@ def main():
         train_dataset = CESM_Dataset("train", config.DATA_SPLIT_SETTINGS)
         val_dataset = CESM_Dataset("val", config.DATA_SPLIT_SETTINGS)
 
-        train_dataloader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, shuffle=True, num_workers=2)
-        val_dataloader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=2)
+        train_dataloader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, shuffle=True)
+        val_dataloader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False)
 
         # Initialize model, optimizer, and loss function
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

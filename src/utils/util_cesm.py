@@ -321,7 +321,7 @@ def load_inputs_data_da_dict(input_config, data_split_settings):
 
 
 
-def save_inputs_files(input_config, save_path, data_split_settings):
+def save_inputs_files(input_config, save_path, data_split_settings, overwrite=False):
     """
     Writes a model-ready input file (.nc) for each ensemble member to save_path
 
@@ -343,7 +343,7 @@ def save_inputs_files(input_config, save_path, data_split_settings):
     start_prediction_months = get_start_prediction_months(data_split_settings)
     for member_id in member_ids:
         save_name = os.path.join(save_path, f"inputs_member_{member_id}.nc")
-        if os.path.exists(save_name):
+        if os.path.exists(save_name) and not overwrite:
             continue
 
         print(f"Concatenating data into model input format for member {member_id}...")
@@ -413,14 +413,14 @@ def save_inputs_files(input_config, save_path, data_split_settings):
         
         
         print("done! Saving...")
-        da_merged.to_dataset(name="data").to_netcdf(save_name)
-        da_merged.close()
+        ds = da_merged.to_dataset(name="data")
+        write_nc_file(ds, save_name, overwrite)
 
         end_time = time.time()
         print(f"done! Elapsed time: {end_time - start_time:.2f} seconds")
 
 
-def save_targets_files(input_config, target_config, save_path, max_lead_months, data_split_settings):
+def save_targets_files(input_config, target_config, save_path, max_lead_months, data_split_settings, overwrite=False):
     """
     Writes a model-ready targets file (.nc) for each ensemble member to save_path
     
@@ -444,7 +444,7 @@ def save_targets_files(input_config, target_config, save_path, max_lead_months, 
     start_prediction_months = get_start_prediction_months(data_split_settings)
     for member_id in member_ids:
         save_name = os.path.join(save_path, f"targets_member_{member_id}.nc")
-        if os.path.exists(save_name):
+        if os.path.exists(save_name) and not overwrite:
             continue
 
         print(f"Concatenating ground-truth data into model output format for member {member_id}...")
@@ -474,8 +474,8 @@ def save_targets_files(input_config, target_config, save_path, max_lead_months, 
         da_merged = da_merged.chunk(chunks={"start_prediction_month":12, "lead_time":-1})
         
         print("done! Saving...")
-        da_merged.to_dataset(name="data").to_netcdf(save_name)
-        da_merged.close()
+        ds = da_merged.to_dataset(name="data")
+        write_nc_file(ds, save_name, overwrite)
 
         end_time = time.time()
         print(f"done! Elapsed time: {end_time - start_time:.2f} seconds")
