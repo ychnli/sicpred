@@ -75,7 +75,7 @@ INPUT_CONFIG = {
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'temp': {
-        'include': False, 'norm': True, 'land_mask': True, 'lag': 6, 
+        'include': True, 'norm': True, 'land_mask': True, 'lag': 6, 
         'divide_by_stdev': True, 'auxiliary': False, 'use_min_max': False
     }, 
     'geopotential': {

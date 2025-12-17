@@ -88,9 +88,13 @@ def validate_epoch(model, dataloader, loss_fn, device, epoch, total_epochs):
     
     return epoch_loss / len(dataloader)
 
-def get_best_checkpoint(checkpoint_dir):
+def get_best_checkpoint(checkpoint_dir, member_id=None):
     # Check for 'final' checkpoint first
     checkpoint_files = [f for f in os.listdir(checkpoint_dir) if (f.endswith(".pth") and "final" not in f)]
+
+    # select the member_id
+    if member_id is not None:
+        checkpoint_files = [f for f in checkpoint_files if (f"member_{member_id}" in f)]
     
     if len(checkpoint_files) == 0:
         return None 
@@ -154,7 +158,7 @@ def main():
         total_epochs = config.NUM_EPOCHS
         if args.resume > 0:
             if os.path.exists(save_dir) and len(os.listdir(save_dir)) != 0:
-                checkpoint_path = get_best_checkpoint(save_dir)
+                checkpoint_path = get_best_checkpoint(save_dir, ensemble_id)
                 if checkpoint_path:
                     checkpoint = torch.load(checkpoint_path, map_location=device)
                     model.load_state_dict(checkpoint["model_state_dict"])
