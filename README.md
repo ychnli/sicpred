@@ -11,7 +11,7 @@ TODO
 python -m src.download.download_cesm_data
 ```
 
-Note that this script also supports parallel downloads via an array job, if you are running on HPC. 
+Note that this script also supports parallel downloads via an array job, if you are running on HPC. In total, downloading and regridding CESM data takes a few hours; the data is ~6.0 GB.
 
 **Observational data**: TODO
 
