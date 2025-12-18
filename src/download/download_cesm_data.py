@@ -1,13 +1,37 @@
+"""
+This script downloads monthly CESM2 Large Ensemble variables per ensemble member,
+subsets them (time/space/vertical), regrids to an 80x80 South Polar Stereographic (SPS)
+target grid using xESMF, and saves one NetCDF file per (variable, member).
+
+Summary:
+- Uses the NCAR AWS intake-esm catalog to locate and open CESM2-LENS datasets.
+- Builds a list of (variable, member_id) tasks from `DOWNLOAD_SETTINGS`.
+- Supports array-job style parallelism. Download and regridding tasks are split among
+    workers by interleaving (worker k gets tasks k, k+W, k+2W, ...).
+- Preview tasks without downloading using the --dry-run flag.
+
+Usage examples:
+Single-worker download (no parallelism):
+        python -m src.download.download_cesm_data
+
+Dry-run (prints assignments for a worker without downloading):
+        python -m src.download.download_cesm_data --num-workers 8 --worker-id 3 --dry-run
+
+Notes:
+- `DOWNLOAD_SETTINGS` controls which variables and which member_id labels to
+    process. Member IDs must be the string labels (e.g. 'r5i1301p1f1').
+- The script will create output directories under `DOWNLOAD_SETTINGS['save_directory']`
+"""
+
 import intake
 import numpy as np
-import pandas as pd
 import xarray as xr
 import xesmf as xe
 import time
 import os
 import pyproj
-import sys
 import argparse
+import requests
 from src import config 
 
 AVAILABLE_CESM_MEMBERS = [
@@ -51,7 +75,7 @@ DOWNLOAD_SETTINGS = {
                     "TREFHT": INPUT_EXPERIMENTS_SUBSET
                     },
     # where to save the data
-    "save_directory": "/scratch/users/yucli/"
+    "save_directory": config.DATA_DIRECTORY
 }
 
 # If more variables are added, the following dictionary needs to be updated
@@ -95,12 +119,96 @@ CATALOG = intake.open_esm_datastore(
     'https://raw.githubusercontent.com/NCAR/cesm2-le-aws/main/intake-catalogs/aws-cesm2-le.json'
 )
 
-CESM_OCEAN_GRID = xr.open_dataset(f"{config.DATA_DIRECTORY}/cesm_lens/grids/ocean_grid.nc")
+# CESM's native ocean grid will be loaded at runtime. If missing, download it from ESGF.
+CESM_OCEAN_GRID = None
+
+def esgf_search(server="https://esgf-node.llnl.gov/esg-search/search",
+                files_type="OPENDAP", local_node=True, project="CMIP6",
+                verbose=False, format="application%2Fsolr%2Bjson",
+                use_csrf=False, **search):
+    """
+    Search ESGF using the REST API and return a sorted list of file URLs.
+
+    Author: Unknown
+        https://docs.google.com/document/d/1pxz1Kd3JHfFp8vR2JCVBfApbsHmbUQQstifhGNdc6U0/edit?usp=sharing
+        API AT: https://github.com/ESGF/esgf.github.io/wiki/ESGF_Search_REST_API#results-pagination
+    """
+    client = requests.session()
+    payload = search.copy()
+    payload["project"] = project
+    payload["type"] = "File"
+    if local_node:
+        payload["distrib"] = "false"
+    if use_csrf:
+        client.get(server)
+        if 'csrftoken' in client.cookies:
+            csrftoken = client.cookies['csrftoken']
+        else:
+            csrftoken = client.cookies.get('csrf')
+        payload["csrfmiddlewaretoken"] = csrftoken
+
+    payload["format"] = format
+
+    offset = 0
+    numFound = 10000
+    all_files = []
+    files_type = files_type.upper()
+    while offset < numFound:
+        payload["offset"] = offset
+        url_keys = []
+        for k in payload:
+            url_keys += [f"{k}={payload[k]}"]
+
+        url = f"{server}/?{'&'.join(url_keys)}"
+        if verbose:
+            print(url)
+        r = client.get(url)
+        r.raise_for_status()
+        resp = r.json()["response"]
+        numFound = int(resp["numFound"])
+        resp = resp["docs"]
+        offset += len(resp)
+        for d in resp:
+            url = d.get("url", [])
+            for f in url:
+                sp = f.split("|")
+                if sp[-1] == files_type:
+                    all_files.append(sp[0].split(".html")[0])
+    return sorted(all_files)
+
+
+def ensure_ocean_grid(verbose=True):
+    """Ensure the CESM ocean grid file exists locally; download from ESGF if missing.
+
+    Returns an xarray.Dataset for the ocean grid.
+    """
+    global CESM_OCEAN_GRID
+    save_dir = os.path.join(config.DATA_DIRECTORY, "cesm_lens", "grids")
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, "ocean_grid.nc")
+
+    if os.path.exists(save_path):
+        if verbose: print(f"Found existing ocean grid at {save_path}")
+        CESM_OCEAN_GRID = xr.open_dataset(save_path)
+        return CESM_OCEAN_GRID
+
+    if verbose: print("Ocean grid not found locally; searching ESGF and downloading a CMIP6 file to extract grid...")
+    result = esgf_search(activity_id='CMIP', table_id='Omon', variable='thetao', experiment_id='piControl',
+                         institution_id="NCAR", source_id="CESM2", member_id='r1i1p1f1')
+    if len(result) == 0:
+        raise RuntimeError("Could not find a CESM2 ocean grid file on ESGF to download")
+
+    ds = xr.open_dataset(result[0])
+    # select one slice and save the result (this should have lat, lon, and bounds)
+    ds.isel(time=0, lev=0).to_netcdf(save_path)
+    if verbose: print(f"Saved ocean grid to {save_path}")
+    CESM_OCEAN_GRID = xr.open_dataset(save_path)
+    return CESM_OCEAN_GRID
 
 
 def retrieve_variable_dataset(catalog, variable, verbose=1):
     """
-    Retrieve and merge CESM Large Ensemble datasets for a specific variable.
+    Retrieve and merge CESM Large Ensemble historical datasets for a specific variable.
     """
 
     if verbose >= 1: print(f"Finding {variable}...", end="")
@@ -110,32 +218,28 @@ def retrieve_variable_dataset(catalog, variable, verbose=1):
         if verbose >= 1: print(f"did not find any saved data. Skipping...")
         return None 
         
-    if len(catalog_subset.df) != 4: 
-        if verbose >= 1: print(f"only found {len(catalog_subset.df)} saved experiments instead of expected (4)")
+    if len(catalog_subset.df) < 1: 
+        if verbose >= 1: print(f"found {len(catalog_subset.df)} saved experiments (unexpected number)")
 
     dsets = catalog_subset.to_dataset_dict(storage_options={'anon':True})
     if verbose >= 1: print("done! merging datasets...", end="")
 
-    # get the model component and save it to VAR_ARGS dict 
     component = catalog_subset.df.component[0]
     CESM_VAR_ARGS[variable]["component"] = component 
     
     cmip_hist_ds = dsets.get(f"{component}.historical.monthly.cmip6", None)
     smbb_hist_ds = dsets.get(f"{component}.historical.monthly.smbb", None)
-    cmip_ssp_ds = dsets.get(f"{component}.ssp370.monthly.cmip6", None)
-    smbb_ssp_ds = dsets.get(f"{component}.ssp370.monthly.smbb", None)
 
-    cmip_merge_ds, smbb_merge_ds = None, None
-    if cmip_hist_ds and cmip_ssp_ds:
-        cmip_merge_ds = xr.concat([cmip_hist_ds, cmip_ssp_ds], dim='time') 
-    if smbb_hist_ds and smbb_ssp_ds: 
-        smbb_merge_ds = xr.concat([smbb_hist_ds, smbb_ssp_ds], dim='time')
-    if cmip_merge_ds and smbb_merge_ds:
-        merged_ds = xr.concat([cmip_merge_ds, smbb_merge_ds], dim='member_id')
-    elif cmip_merge_ds:
-        merged_ds = cmip_merge_ds
+    if cmip_hist_ds is None and smbb_hist_ds is None:
+        raise Exception(f"{variable} seems to be missing historical protocol ensemble members")
+
+    # If both protocol datasets exist, concatenate along member_id; otherwise use whichever exists.
+    if cmip_hist_ds is not None and smbb_hist_ds is not None:
+        merged_ds = xr.concat([cmip_hist_ds, smbb_hist_ds], dim='member_id')
+    elif cmip_hist_ds is not None:
+        merged_ds = cmip_hist_ds
     else:
-        raise Exception(f"{variable} seems to be missing CMIP protocol ensemble members")
+        merged_ds = smbb_hist_ds
 
     if verbose >= 1: print("done! \n")
     return merged_ds 
@@ -148,7 +252,7 @@ def subset_variable_dataset(merged_ds, variable, member_id, chunk="default", tim
 
     print(f"Subsetting ensemble member {member_id}... ", end="")
 
-    component_grid = var_args[variable]["grid"]
+    component_grid = var_args[variable]["component"]
 
     # Select the CESM member_id
     try:
@@ -225,7 +329,8 @@ def generate_sps_grid(grid_size=80, lat_boundary=-52.5):
     y = np.linspace(-max_radius, max_radius, grid_size)
     X, Y = np.meshgrid(x, y)
 
-    lon, lat = pyproj.transform(proj_south_pole, proj_geographic, X, Y)
+    transformer = pyproj.Transformer.from_proj(proj_south_pole, proj_geographic, always_xy=True)
+    lon, lat = transformer.transform(X, Y)
 
     output_grid = xr.Dataset(
         {
@@ -314,10 +419,7 @@ def check_if_downloaded(var_args=CESM_VAR_ARGS, download_settings=DOWNLOAD_SETTI
             print(f"Found {len(downloaded_members)} existing downloaded members for requested variable {variable}")
 
             # remove the downloaded member ids from the download_settings
-            if type(download_settings["member_id"][variable]) == list:
-                download_settings_updated["member_id"][variable] = [m for m in download_settings["member_id"][variable] if str(m) not in downloaded_members]
-            else:
-                raise TypeError("download_settings['member_id'] needs to be a list of member-id labels")
+            download_settings_updated["member_id"][variable] = [m for m in download_settings["member_id"][variable] if str(m) not in downloaded_members]
             
     return download_settings_updated
     
@@ -348,8 +450,6 @@ def process_member(variable, merged_ds, input_grid, output_grid,
 
     except Exception as e:
         print(f"Error processing member {member}: {e}")
-
-
 
 
 def main():
@@ -384,6 +484,9 @@ def main():
 
     output_grid = generate_sps_grid()
 
+    # Ensure ocean grid exists (download from ESGF if necessary)
+    ensure_ocean_grid()
+
     download_settings = {
         **DOWNLOAD_SETTINGS,
         "member_id": {**DOWNLOAD_SETTINGS.get("member_id", {})},
@@ -402,17 +505,7 @@ def main():
     # build a list of (variable, member) download/processing tasks
     all_tasks = []
     for variable in download_settings["vars"]:
-        merged_ds = retrieve_variable_dataset(catalog=CATALOG, variable=variable)
-        if merged_ds is None:
-            continue
-
-        # member_id is expected to be a list of member-id labels
-        if isinstance(download_settings["member_id"][variable], list):
-            members_to_download = download_settings["member_id"][variable]
-        else:
-            raise TypeError("download_settings['member_id'][variable] needs to be a list of member-id labels")
-
-        for member in members_to_download:
+        for member in download_settings["member_id"][variable]:
             save_path = os.path.join(
                 variable_dirs[variable],
                 f"{CESM_VAR_ARGS[variable]['save_name']}_{member}.nc",
@@ -444,9 +537,8 @@ def main():
         print("======================================================\n")
         return
 
-    # Cache merged datasets per variable to avoid repeated catalog reads.
+    # cache datasets per variable to avoid repeated catalog reads
     merged_cache = {}
-
     for (variable, member) in worker_tasks:
         if variable not in merged_cache:
             merged_cache[variable] = retrieve_variable_dataset(catalog=CATALOG, variable=variable)
