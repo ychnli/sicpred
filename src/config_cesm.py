@@ -2,7 +2,6 @@
 Global configurations for the CESM dataset 
 """
 
-
 DATA_DIRECTORY = '/oak/stanford/groups/earlew/yuchen'
 
 RAW_DATA_DIRECTORY = '/oak/stanford/groups/earlew/yuchen/cesm_lens/combined_data'
