@@ -83,20 +83,14 @@ MODEL_ARGS = {
     "n_channels_factor": 0.5, 
 }
 LOSS_FUNCTION = "MSE" 
-LOSS_FUNCTION_ARGS = {
-    "apply_month_weights": True,
-    "monthly_weights": {"data_split_settings": DATA_SPLIT_SETTINGS,
-                        "use_softmax": True,
-                        "T": 2}, # a dict of params for util_cesm.calculate_monthly_weights
-    "apply_area_weights": True,
-    "l2_lambda": 0
-}
 
 ############################# training configs ##############################
 LEARNING_RATE = 1e-3
+WEIGHT_DECAY = 5e-3
 BATCH_SIZE = 64
-NUM_EPOCHS = 10
+NUM_EPOCHS = 20
 CHECKPOINT_INTERVAL = 1
+PATIENCE = 3
 
 ############################# evaluation configs #############################
 CHECKPOINT_TO_EVALUATE = "epoch_10"

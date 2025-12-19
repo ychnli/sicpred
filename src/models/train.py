@@ -1,10 +1,11 @@
 import os
 import torch
+import pickle
 import wandb
 import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader
-from torch.optim import Adam
+from torch.optim import AdamW
 from tqdm import tqdm
 import argparse 
 import importlib.util
@@ -26,7 +27,18 @@ def load_config(config_path):
     return config
 
 
-def train_epoch(model, dataloader, optimizer, loss_fn, device, epoch, total_epochs):
+def train_epoch(
+    model,
+    dataloader,
+    optimizer,
+    loss_fn,
+    device,
+    epoch,
+    total_epochs,
+    *,
+    global_step: int = 0,
+    log_each_n_steps: int = 1,
+):
     model.train()
     epoch_loss = 0
     progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Epoch {epoch}/{total_epochs} [Train]")
@@ -47,12 +59,22 @@ def train_epoch(model, dataloader, optimizer, loss_fn, device, epoch, total_epoc
         loss = loss_fn(**loss_kwargs)
         loss.backward()
         optimizer.step()
+
+        if wandb.run is not None and (global_step % log_each_n_steps == 0):
+            wandb.log(
+                {
+                    "train/loss_step": loss.item(),
+                    "train/epoch": epoch,
+                },
+                step=global_step,
+            )
+        global_step += 1
         
         epoch_loss += loss.item()
         # Update progress bar with batch loss
         progress_bar.set_postfix({"Batch Loss": loss.item()})
 
-    return epoch_loss / len(dataloader)
+    return epoch_loss / len(dataloader), global_step
 
 def set_random_seed(seed):
     """Set random seeds for ensemble generation"""
@@ -114,6 +136,9 @@ def main():
     # Load configurations
     config = load_config(args.config)
 
+    # Early stopping
+    patience = int(getattr(config, "PATIENCE", 3))
+
     for ensemble_id in range(args.members):
         ensemble_id = args.start_ens_id + ensemble_id
         set_random_seed((ensemble_id) * 100) 
@@ -125,19 +150,15 @@ def main():
                    mode="online", 
                    config={"lr": config.LEARNING_RATE, "batch_size": config.BATCH_SIZE})
 
-        # Data split settings
         train_dataset = CESM_Dataset("train", config.DATA_SPLIT_SETTINGS)
         val_dataset = CESM_Dataset("val", config.DATA_SPLIT_SETTINGS)
-
         train_dataloader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, shuffle=True)
         val_dataloader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False)
 
-        # Initialize model, optimizer, and loss function
+        # initialize model
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         in_channels = util_cesm.get_num_input_channels(config.INPUT_CONFIG)
         out_channels = util_cesm.get_num_output_channels(config.MAX_LEAD_MONTHS, config.TARGET_CONFIG)
-        
         if config.MODEL == "UNetRes3": 
             model = UNetRes3(in_channels=in_channels, 
                             out_channels=out_channels, 
@@ -148,10 +169,19 @@ def main():
         else: 
             raise NotImplementedError(f"Model {config.MODEL} not implemented.")
         
-        optimizer = Adam(model.parameters(), lr=config.LEARNING_RATE)
+        # initialize optimizer
+        optimizer = AdamW(
+            model.parameters(), 
+            lr=config.LEARNING_RATE, 
+            weight_decay=config.WEIGHT_DECAY
+        )
 
+        # initialize loss function
         if config.LOSS_FUNCTION == "MSE": 
-            loss_fn = WeightedMSELoss(device=device, model=model, **config.LOSS_FUNCTION_ARGS)
+            area_weights = util_cesm.calculate_area_weights()
+            with open(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", config.DATA_CONFIG_NAME, "month_weights.pkl"), "rb") as f:
+                month_weights = pickle.load(f)
+            loss_fn = WeightedMSELoss(device, area_weights, month_weights)
         else:
             raise NotImplementedError(f"Loss {config.LOSS_FUNCTION} not implemented.")
         
@@ -159,6 +189,10 @@ def main():
         save_dir = os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME)
         start_epoch = 1
         total_epochs = config.NUM_EPOCHS
+        global_step = 0
+        best_val_loss = float("inf")
+        best_epoch = 0
+        epochs_without_improvement = 0
         if args.resume > 0:
             if os.path.exists(save_dir) and len(os.listdir(save_dir)) != 0:
                 checkpoint_path = get_best_checkpoint(save_dir, ensemble_id)
@@ -168,6 +202,10 @@ def main():
                     optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
                     start_epoch = checkpoint["epoch"] + 1
                     total_epochs = start_epoch + args.resume - 1
+                    global_step = checkpoint.get("global_step", 0)
+                    best_val_loss = checkpoint.get("best_val_loss", float("inf"))
+                    best_epoch = checkpoint.get("best_epoch", 0)
+                    epochs_without_improvement = checkpoint.get("epochs_without_improvement", 0)
                     print(f"Resuming training from epoch {start_epoch} for {args.resume} additional epochs.")
             else:
                 print("No checkpoint found to resume from.")
@@ -177,11 +215,56 @@ def main():
         # train model 
         os.makedirs(save_dir, exist_ok=True)
         for epoch in range(start_epoch, total_epochs + 1):
-            train_loss = train_epoch(model, train_dataloader, optimizer, loss_fn, device, epoch, total_epochs)
+            train_loss, global_step = train_epoch(
+                model,
+                train_dataloader,
+                optimizer,
+                loss_fn,
+                device,
+                epoch,
+                total_epochs,
+                global_step=global_step,
+                log_each_n_steps=1,
+            )
             val_loss = validate_epoch(model, val_dataloader, loss_fn, device, epoch, total_epochs)
 
             # Log metrics to WandB
-            wandb.log({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss})
+            wandb.log(
+                {
+                    "epoch": epoch,
+                    "train_loss": train_loss,
+                    "val_loss": val_loss,
+                    "early_stopping/patience": patience,
+                    "early_stopping/epochs_without_improvement": epochs_without_improvement,
+                    "early_stopping/best_val_loss": best_val_loss,
+                },
+                step=global_step,
+            )
+
+            # Early stopping bookkeeping (based on val loss)
+            improved = val_loss < best_val_loss
+            if improved:
+                best_val_loss = val_loss
+                best_epoch = epoch
+                epochs_without_improvement = 0
+                best_checkpoint_path = os.path.join(
+                    save_dir,
+                    f"{config.MODEL}_{config.EXPERIMENT_NAME}_member_{ensemble_id}_best.pth",
+                )
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "global_step": global_step,
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "best_val_loss": best_val_loss,
+                        "best_epoch": best_epoch,
+                        "epochs_without_improvement": epochs_without_improvement,
+                    },
+                    best_checkpoint_path,
+                )
+            else:
+                epochs_without_improvement += 1
 
             # Save a checkpoint
             file_name = f"{config.MODEL}_{config.EXPERIMENT_NAME}_member_{ensemble_id}_epoch_{epoch}.pth"
@@ -189,11 +272,22 @@ def main():
             if epoch % config.CHECKPOINT_INTERVAL == 0:
                 torch.save({
                     "epoch": epoch,
+                    "global_step": global_step,
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
+                    "best_val_loss": best_val_loss,
+                    "best_epoch": best_epoch,
+                    "epochs_without_improvement": epochs_without_improvement,
                 }, checkpoint_path)
 
             print(f"Epoch {epoch} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
+
+            if patience > 0 and epochs_without_improvement >= patience:
+                print(
+                    f"Early stopping triggered at epoch {epoch}. "
+                    f"Best val loss {best_val_loss:.6f} at epoch {best_epoch}."
+                )
+                break
 
         # Save the final model
         final_checkpoint_path = os.path.join(save_dir, 

@@ -13,46 +13,21 @@ class WeightedMSELoss(nn.Module):
     Modification of standard MSE loss that allows for weighting by month and area
     """
 
-    def __init__(self, device, model, 
-                 monthly_weights=None, 
-                 apply_area_weights=True, 
-                 l2_lambda=0):
+    def __init__(self, device, area_weights_np, month_weights_np):
         
         super(WeightedMSELoss, self).__init__()
         
         self.device = device
-        self.model = model
-        self.monthly_weights = torch.from_numpy(monthly_weights).to(device=device, dtype=torch.float32)
-        self.apply_area_weights = apply_area_weights
-        if apply_area_weights:
-            area_weights = util_cesm.calculate_area_weights()
-            self.area_weights = torch.from_numpy(area_weights).to(device=device, dtype=torch.float32)
-        self.scale_factor = scale_factor
-        self.l2_lambda = l2_lambda
-    
+        self.monthly_weights = torch.from_numpy(month_weights_np).to(device=device, dtype=torch.float32)
+        self.area_weights = torch.from_numpy(area_weights_np).to(device=device, dtype=torch.float32)    
 
     def forward(self, prediction, target, target_months):
         squared_diff = (target - prediction) ** 2 # shape = (batch, channel, x, y)
         
-        if self.apply_month_weights:
-            month_w = self.monthly_weights[target_months.long() - 1]     # (B, C)
-            month_w = month_w[..., None, None]                           # (B, C, X, Y)
-        else:
-            month_w = 1.0
-
-        if self.apply_area_weights:
-            area_w = self.area_weights
-        else:
-            area_w = 1.0
-
-        w = month_w * area_w
+        month_w = self.monthly_weights[target_months.long() - 1]     # (B, C)
+        month_w = month_w[..., None, None]                           # (B, C, X, Y)
+        w = month_w * self.area_weights
         mse_loss = (w * squared_diff).sum() / w.sum()
-
-        # L2 regularization term 
-        if self.l2_lambda != 0: 
-            reg_loss = self.l2_lambda * sum(torch.sum(param ** 2) for param in self.model.parameters() if param.requires_grad)
-            return mse_loss + reg_loss 
-        
         return mse_loss
         
 

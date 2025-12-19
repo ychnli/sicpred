@@ -67,6 +67,15 @@ def main():
     # save the icefrac land mask
     util_cesm.save_icefrac_land_mask() 
 
+    # compute month weights
+    print("Calculating and saving month weights... \n")
+    month_weights_fp = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", config.DATA_CONFIG_NAME, "month_weights.pkl")
+    if not os.path.exists(month_weights_fp) or args.overwrite:
+        month_weights = util_cesm.calculate_monthly_weights(data_split_settings=config.DATA_SPLIT_SETTINGS)
+        with open(month_weights_fp, "wb") as f:
+            pickle.dump(month_weights, f)
+        print("done! \n\n")
+
     # Prepare model-ready data pairs (concatenate stuff) 
     print("Prepping model-ready data pairs... \n")
     model_data_save_path = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.DATA_CONFIG_NAME)
