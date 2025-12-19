@@ -1,4 +1,5 @@
-import xarray as xr
+import importlib
+import types
 import os
 
 def write_nc_file(ds, save_path, overwrite, verbose=1):
@@ -30,3 +31,27 @@ def write_nc_file(ds, save_path, overwrite, verbose=1):
     else: 
         ds.to_netcdf(save_path)
         if verbose == 2: print(f"Saved to {save_path}")
+
+
+def load_globals(module):
+    """
+    Load all global variables declared in a module as a dictionary.
+    
+    Parameters:
+        module (module): The loaded Python module.
+    
+    Returns:
+        dict: A dictionary containing global variables from the module.
+    """
+    return {
+        name: value
+        for name, value in vars(module).items()
+        if not name.startswith("__") and not isinstance(value, types.ModuleType) and not callable(value)
+    }
+
+
+def load_config(config_path):
+    spec = importlib.util.spec_from_file_location("config", config_path)
+    config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config)
+    return config

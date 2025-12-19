@@ -23,7 +23,7 @@ def load_config(config_path):
 def check_for_sst_issue(config):
     member_ids = config.DATA_SPLIT_SETTINGS["test"] + config.DATA_SPLIT_SETTINGS["val"] + config.DATA_SPLIT_SETTINGS["train"]
     if len(set(member_ids) & set(problematic_member_id)) != 0:
-        if config.INPUT_CONFIG["temp"]["include"]:
+        if config.INPUT_CONFIG["sst"]["include"]:
             raise ValueError("this data split contains ensemble members with corrupted SST")
 
 def main():
@@ -40,6 +40,9 @@ def main():
     # create directories for saving processed data
     os.makedirs(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", config.DATA_CONFIG_NAME), exist_ok=True)
     os.makedirs(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.DATA_CONFIG_NAME), exist_ok=True)
+
+    # merge downloaded data, if not already
+    util_cesm.merge_data_by_member()
 
     # Normalize 
     print("Normalizing data according to the following data_split_settings:")
@@ -63,6 +66,15 @@ def main():
 
     # save the icefrac land mask
     util_cesm.save_icefrac_land_mask() 
+
+    # compute month weights
+    print("Calculating and saving month weights... \n")
+    month_weights_fp = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", config.DATA_CONFIG_NAME, "month_weights.pkl")
+    if not os.path.exists(month_weights_fp) or args.overwrite:
+        month_weights = util_cesm.calculate_monthly_weights(data_split_settings=config.DATA_SPLIT_SETTINGS)
+        with open(month_weights_fp, "wb") as f:
+            pickle.dump(month_weights, f)
+        print("done! \n\n")
 
     # Prepare model-ready data pairs (concatenate stuff) 
     print("Prepping model-ready data pairs... \n")

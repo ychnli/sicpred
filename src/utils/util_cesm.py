@@ -9,7 +9,7 @@ from src import config_cesm as config
 from src.utils.util_shared import write_nc_file
 
 ALL_VAR_NAMES = config.ALL_VAR_NAMES
-LAND_MASK_PATH = os.path.join(config.DATA_DIRECTORY, "cesm_lens", "grids", "land_mask.nc")
+LAND_MASK_PATH = os.path.join(config.DATA_DIRECTORY, "cesm_data", "grids", "land_mask.nc")
 
 def check_valid_data_split_settings(data_split_settings):
     ### TODO: check that data_split_settings is valid 
@@ -57,17 +57,11 @@ def find_downloaded_vars():
     return min_members
 
 
-def normalize(x, m, s, var_name=None):
+def normalize(x, m, s):
     # Avoid divide by zero by setting normalized value to zero where std deviation is zero
     with np.errstate(divide='ignore', invalid='ignore'):
         normalized = (x - m) / s
         normalized = np.where(s == 0, 0, normalized)  # Set to zero where std dev is zero
-
-    # For SST below sea ice, the stdev is very low. Normalized values are set to 0 
-    # if the stdev is below threshold value
-    if var_name == "temp":
-        threshold = 0.001
-        normalized = np.where(s <= threshold, 0, normalized)
 
     return normalized
 
@@ -132,6 +126,45 @@ def get_start_prediction_months(data_split_settings):
     return start_prediction_months
 
 
+def merge_data_by_member(overwrite=False):
+    """
+    Merge CESM ensemble-member NetCDF files into a single dataset indexed
+    by member_id, then delete the individual member files.
+    """
+    for var_name in ALL_VAR_NAMES:
+        var_dir = os.path.join(config.DATA_DIRECTORY, "cesm_data", var_name)
+        file_list = sorted(os.listdir(var_dir))
+        combined_fname = f"{var_name}_combined.nc"
+        combined_path = os.path.join(var_dir, combined_fname)
+
+        if combined_fname in file_list and not overwrite:
+            continue
+
+        member_files = [
+            f for f in file_list
+            if f.endswith(".nc") and f != combined_fname
+        ]
+
+        ds_list = []
+        try:
+            for f in member_files:
+                path = os.path.join(var_dir, f)
+                ds = xr.open_dataset(path, chunks={"time": 120})
+                # use pandas time index instead of cftime
+                ds = ds.assign_coords(time=pd.date_range("1850-01", "2014-12", freq="MS"))
+                ds_list.append(ds)
+
+            merged_ds = xr.concat(ds_list, dim="member_id")
+            write_nc_file(merged_ds, combined_path, overwrite)
+        finally:
+            for ds in ds_list:
+                ds.close()
+
+        # delete individual member files after successful write
+        for f in member_files:
+            os.remove(os.path.join(var_dir, f))
+
+
 def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_months=6,
                     overwrite=False, verbose=1, divide_by_stdev=False, use_min_max=True, 
                     detrend=True):
@@ -162,26 +195,8 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
         return None
 
     print(f"Normalizing {var_name}, divide_by_stdev = {divide_by_stdev}...", end=" ")
+    merged_ds = xr.open_dataset(os.path.join(config.DATA_DIRECTORY, "cesm_data", var_name, f"{var_name}_combined.nc"))
 
-    # First make a merged dataset from the separate ones 
-    # file_list = sorted(os.listdir(f"{config.RAW_DATA_DIRECTORY}/{var_name}"))
-    # if f"{var_name}_combined.nc" in file_list and not overwrite: 
-    merged_ds = xr.open_dataset(os.path.join(config.RAW_DATA_DIRECTORY, f"{var_name}_combined.nc"))
-    # else: 
-    #     ds_list = []
-
-    #     for file in file_list:
-    #         if file == f"{var_name}_combined.nc": continue
-    #         ds = xr.open_dataset(os.path.join(f"{config.RAW_DATA_DIRECTORY}/{var_name}", file), chunks={'time': 120})
-    #         # change the time index to pandas instead of cftime
-    #         ds = ds.assign_coords(time=pd.date_range("1850-01", "2100-12", freq="MS"))
-    #         ds_list.append(ds)
-
-    #     merged_ds = xr.concat(ds_list, dim="member_id")
-    
-    #     # save the merged ds before normalizing 
-    #     write_nc_file(merged_ds, f"{config.RAW_DATA_DIRECTORY}/{var_name}/{var_name}_combined.nc", overwrite)
-    
     # create a subsetted DataArray that contains the data requested by data_split_settings
     da = merged_ds[var_name]
 
@@ -221,7 +236,6 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
             da,
             monthly_means.sel(month=months),
             monthly_stdevs.sel(month=months),
-            var_name,
             output_dtypes=[da.dtype],
             dask="allowed"
         )
@@ -516,13 +530,13 @@ def save_land_mask():
     This is the same land mask as icethick, but NOT the same as icefrac. See the function below
     for more info. 
     """
-    save_dir = os.path.join(config.DATA_DIRECTORY, "cesm_lens", "grids")
+    save_dir = os.path.join(config.DATA_DIRECTORY, "cesm_data", "grids")
     os.makedirs(save_dir, exist_ok=True)
     save_path = LAND_MASK_PATH
 
     if os.path.exists(save_path): return 
 
-    ds = xr.open_dataset(os.path.join(config.RAW_DATA_DIRECTORY, "temp", "temp_combined.nc"))
+    ds = xr.open_dataset(os.path.join(config.DATA_DIRECTORY, "cesm_data", "sst", "sst_combined.nc"))
     land_mask = np.isnan(ds.temp.isel(time=0, member_id=0))
     land_mask = land_mask.to_dataset(name="mask").drop_vars(("member_id","z_t","time"))
 
@@ -537,12 +551,12 @@ def save_icefrac_land_mask():
     land mask. We will define the icefrac land mask as the intersection of the SST land mask 
     and the region where icefrac is always 0. 
     """
-    save_dir = os.path.join(config.DATA_DIRECTORY, "cesm_lens", "grids")
+    save_dir = os.path.join(config.DATA_DIRECTORY, "cesm_data", "grids")
     save_path = os.path.join(save_dir, "icefrac_land_mask.nc")
 
     if os.path.exists(save_path): return 
 
-    ds = xr.open_dataset(f"{config.RAW_DATA_DIRECTORY}/icefrac/icefrac_combined.nc")
+    ds = xr.open_dataset(f"{config.DATA_DIRECTORY}/cesm_data/icefrac/icefrac_combined.nc")
 
     # we'll use 5 ensemble members to calculate the region where icefrac is always 0
     icefrac_zero_mask = ds["icefrac"].isel(member_id=slice(0,5)).mean(("member_id", "time")) == 0
@@ -625,43 +639,26 @@ def calculate_area_weights():
 
     grid = generate_sps_grid()
     
-    weights = (grid.area / np.max(grid.area)).values 
+    weights = (grid.area / np.mean(grid.area)).values 
 
     return weights 
 
 
-def calculate_monthly_weights(data_split_settings, use_softmax=True, T=2):
+def calculate_monthly_weights(data_split_settings):
     """
-    Calculates the monthly weights based on the seasonal sea ice cycle.
+    Calculates the monthly weights based on the seasonal cycle of mean squared sea ice concentration anomaly
     
     Param:
         (dict)      data_split_settings
-        (bool)      use_softmax (optionally apply softmax to reduce the upweighting of summer months)
-        (float)     T (denominator of the softmax)
-
     Returns:
-        (np.array)  weights (shape=(12,))
+        (np.array)  weights (12,)
     """
 
-    file = os.path.join(config.PROCESSED_DATA_DIRECTORY, "normalized_inputs", data_split_settings["name"], "icefrac_mean.nc")
-    if os.path.exists(file):
-        ds = xr.open_dataset(file)
-        da = ds.icefrac
-    else:
-        raise FileNotFoundError(f"seems like you still need to generate icefrac_mean for data setting {data_split_settings["name"]}")
-
-    grid = generate_sps_grid()
-
-    sia = (da * grid.area).sum(("x", "y")).values
-
-    def softmax(x, T):
-        e_x = np.exp((x - np.max(x)) / T)
-        return e_x / e_x.sum(axis=0) 
+    fp = os.path.join(config.PROCESSED_DATA_DIRECTORY, "normalized_inputs", data_split_settings["name"], "icefrac_norm.nc")
+    with xr.open_dataset(fp) as ds: 
+        weights = (ds["icefrac"] ** 2).groupby("time.month").mean(("time", "member_id", "x", "y"))
+        weights = (1/weights)
+        weights = weights / weights.mean()
+        weights = weights.values
     
-    if use_softmax: 
-        softmax_sia = softmax(sia / 1e13, T=T)
-        weights = max(softmax_sia) / softmax_sia
-    else:
-        weights = max(sia) / sia 
-    
-    return weights 
+    return weights

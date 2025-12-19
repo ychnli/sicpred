@@ -5,6 +5,7 @@ target grid using xESMF, and saves one NetCDF file per (variable, member).
 
 Summary:
 - Uses the NCAR AWS intake-esm catalog to locate and open CESM2-LENS datasets.
+  See https://ncar.github.io/cesm2-le-aws/model_documentation.html for more info
 - Builds a list of (variable, member_id) tasks from `DOWNLOAD_SETTINGS`.
 - Supports array-job style parallelism. Download and regridding tasks are split among
     workers by interleaving (worker k gets tasks k, k+W, k+2W, ...).
@@ -32,35 +33,10 @@ import os
 import pyproj
 import argparse
 import requests
-from src import config 
-
-AVAILABLE_CESM_MEMBERS = [
-       'r10i1181p1f1', 'r10i1231p1f1', 'r10i1251p1f1', 'r10i1281p1f1',
-       'r10i1301p1f1', 'r1i1001p1f1', 'r1i1231p1f1', 'r1i1251p1f1',
-       'r1i1281p1f1', 'r1i1301p1f1', 'r2i1251p1f1', 'r2i1281p1f1', 
-       'r2i1301p1f1', 'r3i1041p1f1', 'r3i1231p1f1', 'r3i1251p1f1', 
-       'r3i1281p1f1', 'r3i1301p1f1', 'r4i1061p1f1', 'r4i1231p1f1', 
-       'r4i1251p1f1', 'r4i1281p1f1', 'r4i1301p1f1', 'r5i1081p1f1', 
-       'r5i1231p1f1', 'r5i1251p1f1', 'r2i1021p1f1', 'r2i1231p1f1',
-       'r5i1281p1f1', 'r5i1301p1f1', 'r6i1101p1f1', 'r6i1231p1f1',
-       'r6i1251p1f1', 'r6i1281p1f1', 'r6i1301p1f1', 'r7i1121p1f1',
-       'r7i1231p1f1', 'r7i1251p1f1', 'r7i1281p1f1', 'r7i1301p1f1',
-       'r8i1141p1f1', 'r8i1231p1f1', 'r8i1251p1f1', 'r8i1281p1f1',
-       'r8i1301p1f1', 'r9i1161p1f1', 'r9i1231p1f1', 'r9i1251p1f1',
-       'r9i1281p1f1', 'r9i1301p1f1', 'r11i1231p1f2', 'r11i1251p1f2',
-       'r11i1281p1f2', 'r11i1301p1f2', 'r12i1231p1f2', 'r12i1251p1f2',
-       'r12i1281p1f2', 'r12i1301p1f2', 'r13i1231p1f2', 'r13i1251p1f2',
-       'r13i1281p1f2', 'r13i1301p1f2', 'r14i1231p1f2', 'r14i1251p1f2',
-       'r14i1281p1f2', 'r14i1301p1f2', 'r15i1231p1f2', 'r15i1251p1f2',
-       'r15i1281p1f2', 'r15i1301p1f2', 'r16i1231p1f2', 'r16i1251p1f2',
-       'r16i1281p1f2', 'r16i1301p1f2', 'r17i1231p1f2', 'r17i1251p1f2',
-       'r17i1281p1f2', 'r17i1301p1f2', 'r18i1231p1f2', 'r18i1251p1f2',
-       'r18i1281p1f2', 'r18i1301p1f2', 'r19i1231p1f2', 'r19i1251p1f2',
-       'r19i1281p1f2', 'r19i1301p1f2', 'r20i1231p1f2', 'r20i1251p1f2',
-       'r20i1281p1f2', 'r20i1301p1f2']
+from src import config_cesm as config
+from config import AVAILABLE_CESM_MEMBERS
 
 INPUT_EXPERIMENTS_SUBSET = AVAILABLE_CESM_MEMBERS[0:14]
-SCALING_EXPERIMENTS_SUBSET = AVAILABLE_CESM_MEMBERS[0:70]
 
 DOWNLOAD_SETTINGS = {
     # variables to download 
@@ -68,7 +44,7 @@ DOWNLOAD_SETTINGS = {
     # chunk settings
     "chunk": "default",
     # which member ids to download; can be "all" or a list of member ids
-    "member_id": {"ICEFRAC": SCALING_EXPERIMENTS_SUBSET, 
+    "member_id": {"ICEFRAC": "all", 
                     "TEMP": INPUT_EXPERIMENTS_SUBSET,
                     "PSL": INPUT_EXPERIMENTS_SUBSET,
                     "Z3": INPUT_EXPERIMENTS_SUBSET,
@@ -91,7 +67,7 @@ CESM_VAR_ARGS = {
     "TEMP": {
         "p_index": 0,
         "lat_slice": slice(0, 93),
-        "save_name": "temp",
+        "save_name": "sst",
         "long_name": "Sea surface temperature",
         "grid": "ocn"
     },
@@ -183,7 +159,7 @@ def ensure_ocean_grid(verbose=True):
     Returns an xarray.Dataset for the ocean grid.
     """
     global CESM_OCEAN_GRID
-    save_dir = os.path.join(config.DATA_DIRECTORY, "cesm_lens", "grids")
+    save_dir = os.path.join(config.DATA_DIRECTORY, "cesm_data", "grids")
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, "ocean_grid.nc")
 

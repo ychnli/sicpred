@@ -53,7 +53,8 @@ def main():
     if config.MODEL == "UNetRes3": 
         model = UNetRes3(in_channels=in_channels, 
                         out_channels=out_channels, 
-                        predict_anomalies=config.TARGET_CONFIG["predict_anom"]).to(device)
+                        predict_anomalies=config.TARGET_CONFIG["predict_anom"],
+                        **config.MODEL_ARGS).to(device)
     else: 
         raise NotImplementedError(f"Model {config.MODEL} not implemented.")
 
