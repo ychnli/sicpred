@@ -6,15 +6,15 @@ import pandas as pd
 from src.config_cesm import AVAILABLE_CESM_MEMBERS
 
 ################################ description ################################
-EXPERIMENT_NAME = "exp1_input3a"
-NOTES = "Previous 12 months of sea ice + land mask and sin() and cos() of month + 6 months of SST"
+EXPERIMENT_NAME = "exp1_input3d"
+NOTES = "Previous 12 months of sea ice + land mask and sin() and cos() of month + 6 months of t2m"
 DATE = "" # optional 
 
 ################################ data configs ################################
 
 MAX_LEAD_MONTHS = 6
 
-DATA_CONFIG_NAME = "seaice_plus_sst"
+DATA_CONFIG_NAME = "seaice_plus_t2m"
 
 """
 data_split_settings should be a dict with keys split_by, train, val, and test
@@ -46,7 +46,7 @@ INPUT_CONFIG = {
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': False
     }, 
     'sst': {
-        'include': True, 'norm': True, 'land_mask': True, 'lag': 6, 
+        'include': False, 'norm': True, 'land_mask': True, 'lag': 6, 
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'geopotential': {
@@ -58,7 +58,7 @@ INPUT_CONFIG = {
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     't2m': {
-        'include': False, 'norm': True, 'land_mask': False, 'lag': 6, 
+        'include': True, 'norm': True, 'land_mask': False, 'lag': 6, 
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'cosine_of_init_month': {

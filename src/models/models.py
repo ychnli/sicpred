@@ -10,9 +10,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.nn.utils import weight_norm
 
-from src import config
 from src import config_cesm
-from src.utils import util_era5 
 from src.utils import util_cesm
 from src.models import models_util
 
@@ -287,7 +285,7 @@ class UNetRes3(nn.Module):
         icefrac is nonzero on coastline cells, whereas SST is NaN). 
         """
         try: 
-            ds = xr.open_dataset(os.path.join(config_cesm.DATA_DIRECTORY, "cesm_lens/grids/icefrac_land_mask.nc"))
+            ds = xr.open_dataset(os.path.join(config_cesm.DATA_DIRECTORY, "cesm_data/grids/icefrac_land_mask.nc"))
         except:
             raise Exception("Uh oh, seems like you still need to run the preprocess script to generate \
                 an icefrac land mask. See src/util_cesm for the function")

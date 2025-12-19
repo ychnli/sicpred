@@ -80,18 +80,18 @@ TARGET_CONFIG = {
 ############################### model configs ###############################
 MODEL = "UNetRes3"
 MODEL_ARGS = {
-    "n_channels_factor": 0.5, 
+    "n_channels_factor": 0.5,
 }
 LOSS_FUNCTION = "MSE" 
 
 ############################# training configs ##############################
 LEARNING_RATE = 1e-3
-WEIGHT_DECAY = 5e-3
+WEIGHT_DECAY = 1e-3
 BATCH_SIZE = 64
-NUM_EPOCHS = 20
+NUM_EPOCHS = 10
 CHECKPOINT_INTERVAL = 1
 PATIENCE = 3
 
 ############################# evaluation configs #############################
-CHECKPOINT_TO_EVALUATE = "epoch_10"
+CHECKPOINT_TO_EVALUATE = "best"
 
