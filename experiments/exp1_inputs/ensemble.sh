@@ -1,0 +1,2 @@
+python3 -m src.models.train --config src/experiment_configs/exp1_inputs/input2.py --members 1 --start_ens_id 4 --resume 5
+python3 -m src.models.evaluate --config src/experiment_configs/exp1_inputs/input2.py

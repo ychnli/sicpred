@@ -112,7 +112,7 @@ def validate_epoch(model, dataloader, loss_fn, device, epoch, total_epochs):
 
 def get_best_checkpoint(checkpoint_dir, member_id=None):
     # Check for 'final' checkpoint first
-    checkpoint_files = [f for f in os.listdir(checkpoint_dir) if (f.endswith(".pth") and "final" not in f)]
+    checkpoint_files = [f for f in os.listdir(checkpoint_dir) if (f.endswith(".pth") and "final" not in f and "best" not in f)]
 
     # select the member_id
     if member_id is not None:
