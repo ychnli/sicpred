@@ -141,7 +141,8 @@ def main():
         if config.MODEL == "UNetRes3": 
             model = UNetRes3(in_channels=in_channels, 
                             out_channels=out_channels, 
-                            predict_anomalies=config.TARGET_CONFIG["predict_anom"]).to(device)
+                            predict_anomalies=config.TARGET_CONFIG["predict_anom"],
+                            **config.MODEL_ARGS).to(device)
         elif config.MODEL == "SICNet":
             model = SICNet(T=in_channels, T_pred=out_channels, base_channels=32).to(device)
         else: 
@@ -151,6 +152,8 @@ def main():
 
         if config.LOSS_FUNCTION == "MSE": 
             loss_fn = WeightedMSELoss(device=device, model=model, **config.LOSS_FUNCTION_ARGS)
+        else:
+            raise NotImplementedError(f"Loss {config.LOSS_FUNCTION} not implemented.")
         
         # Load a checkpoint if it exists
         save_dir = os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME)

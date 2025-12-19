@@ -14,43 +14,39 @@ class WeightedMSELoss(nn.Module):
     """
 
     def __init__(self, device, model, 
-                 apply_month_weights=True,
                  monthly_weights=None, 
                  apply_area_weights=True, 
-                 scale_factor=1, 
                  l2_lambda=0):
         
         super(WeightedMSELoss, self).__init__()
         
-        if apply_month_weights:
-            assert monthly_weights is not None, "Dict of settings for generating monthly weights must be provided if month weighting is enabled"
-
         self.device = device
         self.model = model
-        self.apply_month_weights = apply_month_weights
-        if apply_month_weights:
-            monthly_weights_np = util_cesm.calculate_monthly_weights(**monthly_weights)
-            self.monthly_weights = torch.from_numpy(monthly_weights_np).to(device)
+        self.monthly_weights = torch.from_numpy(monthly_weights).to(device=device, dtype=torch.float32)
         self.apply_area_weights = apply_area_weights
         if apply_area_weights:
             area_weights = util_cesm.calculate_area_weights()
-            self.area_weights = torch.from_numpy(area_weights).to(device)
+            self.area_weights = torch.from_numpy(area_weights).to(device=device, dtype=torch.float32)
         self.scale_factor = scale_factor
         self.l2_lambda = l2_lambda
     
 
     def forward(self, prediction, target, target_months):
-        diff = target - prediction # shape = (batch_size, n_channels, n_x, n_y)
-
+        squared_diff = (target - prediction) ** 2 # shape = (batch, channel, x, y)
+        
         if self.apply_month_weights:
-            for i in range(diff.shape[0]): 
-                for j, target_month in enumerate(target_months[i, :]): 
-                    diff[i, j, :, :] *= self.monthly_weights[target_month - 1]
-        
+            month_w = self.monthly_weights[target_months.long() - 1]     # (B, C)
+            month_w = month_w[..., None, None]                           # (B, C, X, Y)
+        else:
+            month_w = 1.0
+
         if self.apply_area_weights:
-            diff *= self.area_weights 
-        
-        mse_loss = torch.mean(diff ** 2) * self.scale_factor
+            area_w = self.area_weights
+        else:
+            area_w = 1.0
+
+        w = month_w * area_w
+        mse_loss = (w * squared_diff).sum() / w.sum()
 
         # L2 regularization term 
         if self.l2_lambda != 0: 

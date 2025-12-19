@@ -3,34 +3,10 @@ This is a template for an experiment configuration file.
 """
 
 import pandas as pd
-
-# hardcoded for now 
-avail_ens_members = ['r10i1181p1f1', 'r10i1231p1f1', 'r10i1251p1f1', 'r10i1281p1f1',
-       'r10i1301p1f1', 'r1i1001p1f1', 'r1i1231p1f1', 'r1i1251p1f1',
-       'r1i1281p1f1', 'r1i1301p1f1', 'r2i1021p1f1', 'r2i1231p1f1',
-       'r2i1251p1f1', 'r2i1281p1f1', 'r2i1301p1f1', 'r3i1041p1f1',
-       'r3i1231p1f1', 'r3i1251p1f1', 'r3i1281p1f1', 'r3i1301p1f1',
-       'r4i1061p1f1', 'r4i1231p1f1', 'r4i1251p1f1', 'r4i1281p1f1',
-       'r4i1301p1f1', 'r5i1081p1f1', 'r5i1231p1f1', 'r5i1251p1f1',
-       'r5i1281p1f1', 'r5i1301p1f1', 'r6i1101p1f1', 'r6i1231p1f1',
-       'r6i1251p1f1', 'r6i1281p1f1', 'r6i1301p1f1', 'r7i1121p1f1',
-       'r7i1231p1f1', 'r7i1251p1f1', 'r7i1281p1f1', 'r7i1301p1f1',
-       'r8i1141p1f1', 'r8i1231p1f1', 'r8i1251p1f1', 'r8i1281p1f1',
-       'r8i1301p1f1', 'r9i1161p1f1', 'r9i1231p1f1', 'r9i1251p1f1',
-       'r9i1281p1f1', 'r9i1301p1f1', 'r11i1231p1f2', 'r11i1251p1f2',
-       'r11i1281p1f2', 'r11i1301p1f2', 'r12i1231p1f2', 'r12i1251p1f2',
-       'r12i1281p1f2', 'r12i1301p1f2', 'r13i1231p1f2', 'r13i1251p1f2',
-       'r13i1281p1f2', 'r13i1301p1f2', 'r14i1231p1f2', 'r14i1251p1f2',
-       'r14i1281p1f2', 'r14i1301p1f2', 'r15i1231p1f2', 'r15i1251p1f2',
-       'r15i1281p1f2', 'r15i1301p1f2', 'r16i1231p1f2', 'r16i1251p1f2',
-       'r16i1281p1f2', 'r16i1301p1f2', 'r17i1231p1f2', 'r17i1251p1f2',
-       'r17i1281p1f2', 'r17i1301p1f2', 'r18i1231p1f2', 'r18i1251p1f2',
-       'r18i1281p1f2', 'r18i1301p1f2', 'r19i1231p1f2', 'r19i1251p1f2',
-       'r19i1281p1f2', 'r19i1301p1f2', 'r20i1231p1f2', 'r20i1251p1f2',
-       'r20i1281p1f2', 'r20i1301p1f2']
+from src.config_cesm import AVAILABLE_CESM_MEMBERS
 
 ################################ description ################################
-EXPERIMENT_NAME = "exp1_input2_dt"
+EXPERIMENT_NAME = "exp1_input2"
 NOTES = "Previous 12 months of sea ice + land mask and sin() and cos() of month"
 DATE = "" # optional 
 
@@ -56,9 +32,9 @@ and you should specify the time range to use
 DATA_SPLIT_SETTINGS = {
     "name": DATA_CONFIG_NAME, 
     "split_by": "ensemble_member",
-    "train": avail_ens_members[0:8], 
-    "val": avail_ens_members[8:10],
-    "test": avail_ens_members[12:16],
+    "train": AVAILABLE_CESM_MEMBERS[0:8], 
+    "val": AVAILABLE_CESM_MEMBERS[8:10],
+    "test": AVAILABLE_CESM_MEMBERS[10:14],
     "time_range": pd.date_range("1851-01", "2013-12", freq="MS"),
     "member_ids": None
 }
@@ -69,12 +45,8 @@ INPUT_CONFIG = {
         'include': True, 'norm': True, 'land_mask': True, 'lag': 12, 
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': False
     }, 
-    'icethick': {
-        'include': False, 'norm': True, 'land_mask': True, 'lag': 12, 
-        'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
-    }, 
-    'temp': {
-        'include': False, 'norm': True, 'land_mask': True, 'lag': 12, 
+    'sst': {
+        'include': False, 'norm': True, 'land_mask': True, 'lag': 6, 
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'geopotential': {
@@ -85,16 +57,8 @@ INPUT_CONFIG = {
         'include': False, 'norm': True, 'land_mask': False, 'lag': 6, 
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
-    'lw_flux': {
-        'include': False, 'norm': True, 'land_mask': False, 'lag': 3, 
-        'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
-    }, 
-    'sw_flux': {
-        'include': False, 'norm': True, 'land_mask': False, 'lag': 3, 
-        'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
-    }, 
-    'ua': {
-        'include': False, 'norm': True, 'land_mask': False, 'lag': 3, 
+    't2m': {
+        'include': False, 'norm': True, 'land_mask': False, 'lag': 6, 
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'cosine_of_init_month': {
@@ -115,6 +79,9 @@ TARGET_CONFIG = {
 
 ############################### model configs ###############################
 MODEL = "UNetRes3"
+MODEL_ARGS = {
+    "n_channels_factor": 0.5, 
+}
 LOSS_FUNCTION = "MSE" 
 LOSS_FUNCTION_ARGS = {
     "apply_month_weights": True,

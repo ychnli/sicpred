@@ -23,7 +23,7 @@ def load_config(config_path):
 def check_for_sst_issue(config):
     member_ids = config.DATA_SPLIT_SETTINGS["test"] + config.DATA_SPLIT_SETTINGS["val"] + config.DATA_SPLIT_SETTINGS["train"]
     if len(set(member_ids) & set(problematic_member_id)) != 0:
-        if config.INPUT_CONFIG["temp"]["include"]:
+        if config.INPUT_CONFIG["sst"]["include"]:
             raise ValueError("this data split contains ensemble members with corrupted SST")
 
 def main():
@@ -40,6 +40,9 @@ def main():
     # create directories for saving processed data
     os.makedirs(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", config.DATA_CONFIG_NAME), exist_ok=True)
     os.makedirs(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.DATA_CONFIG_NAME), exist_ok=True)
+
+    # merge downloaded data, if not already
+    util_cesm.merge_data_by_member()
 
     # Normalize 
     print("Normalizing data according to the following data_split_settings:")
