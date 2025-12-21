@@ -8,6 +8,7 @@ import xarray as xr
 import os
 import argparse
 from src import config_cesm
+from src.models.diagnostics import roll_metric
 from src.utils.util_shared import write_nc_file
 
 def fisher_z(r):
@@ -149,8 +150,10 @@ def main():
         random_seed=args.random_seed,
     )
 
+    result_ds = roll_metric(result_ds)
+
     write_nc_file(result_ds, output_fp, overwrite=args.overwrite)
-    print(f"done! Bootstrap results saved to {output_fp}")
+    print(f"done! Bootstrap results saved to {output_fp}\n")
 
 
 if __name__ == '__main__':
