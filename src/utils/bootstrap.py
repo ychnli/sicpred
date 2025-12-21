@@ -7,6 +7,7 @@ import numpy as np
 import xarray as xr
 import os
 import argparse
+from src import config_cesm
 from src.utils.util_shared import write_nc_file
 
 def fisher_z(r):
@@ -110,12 +111,8 @@ def main():
     parser = argparse.ArgumentParser(description="Compute bootstrap CIs for metric differences")
     parser.add_argument("--metric", type=str, choices=["acc", "rmse"], required=True,
                         help="Metric to analyze")
-    parser.add_argument("--model_a_metric_fp", type=str, required=True,
-                        help="Filepath to model A metrics (xarray Dataset in NetCDF format)")
-    parser.add_argument("--model_b_metric_fp", type=str, required=True,
-                        help="Filepath to model B metrics (xarray Dataset in NetCDF format)")
-    parser.add_argument("--output_fp", type=str, required=True,
-                        help="Filepath to save output Dataset (NetCDF format)")
+    parser.add_argument("--config_a", type=str, required=True)
+    parser.add_argument("--config_b", type=str, required=True)
     parser.add_argument("--transform", type=str, choices=["fisher_z", "none"], default="none",)
 
     parser.add_argument("--n_bootstrap", type=int, default=5000,
@@ -128,12 +125,17 @@ def main():
 
     args = parser.parse_args()
 
-    if os.path.exists(args.output_fp) and not args.overwrite:
-        print(f"Output file {args.output_fp} already exists. Use --overwrite to overwrite.")
+    output_dir = os.path.join(config_cesm.ANALYSIS_RESULTS_DIRECTORY, "confidence_intervals")
+    output_fp = os.path.join(output_dir, f"{args.config_a}_{args.config_b}_{args.metric}.nc")
+    os.makedirs(output_dir, exist_ok=True)
+
+    if os.path.exists(output_fp) and not args.overwrite:
+        print(f"Output file {output_fp} already exists. Use --overwrite to overwrite.")
         return
 
-    ds_a = xr.load_dataset(args.model_a_metric_fp)
-    ds_b = xr.load_dataset(args.model_b_metric_fp)
+    print(f"Computing CIs for {args.metric} between {args.config_a} and {args.config_b}...")
+    ds_a = xr.load_dataset(os.path.join(config_cesm.PREDICTIONS_DIRECTORY, args.config_a, "diagnostics", f"{args.metric}.nc"))
+    ds_b = xr.load_dataset(os.path.join(config_cesm.PREDICTIONS_DIRECTORY, args.config_b, "diagnostics", f"{args.metric}.nc"))
 
     if args.transform == "fisher_z":
         ds_a[args.metric] = fisher_z(ds_a[args.metric])
@@ -147,5 +149,9 @@ def main():
         random_seed=args.random_seed,
     )
 
-    write_nc_file(result_ds, args.output_fp, overwrite=args.overwrite)
-    print(f"Bootstrap results saved to {args.output_fp}")
+    write_nc_file(result_ds, output_fp, overwrite=args.overwrite)
+    print(f"done! Bootstrap results saved to {output_fp}")
+
+
+if __name__ == '__main__':
+    main()

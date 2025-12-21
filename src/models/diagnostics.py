@@ -115,13 +115,17 @@ def main():
 
     config = util_shared.load_config(args.config)
     config_dict = util_shared.load_globals(config)
+    save_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config_dict["EXPERIMENT_NAME"], "diagnostics")
+    os.makedirs(save_dir, exist_ok=True)
+
+    if not args.overwrite and os.path.exists(os.path.join(save_dir, "acc.nc")):
+        return
+
     print(f"Computing diagnostics for {config_dict["EXPERIMENT_NAME"]}")
 
     targets = load_targets(config_dict, split="test")
     predictions = load_model_predictions(config_dict)
 
-    save_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config_dict["EXPERIMENT_NAME"], "diagnostics")
-    os.makedirs(save_dir, exist_ok=True)
 
     if args.overwrite or not os.path.exists(os.path.join(save_dir, "acc.nc")):
         print("Computing ACC...")
