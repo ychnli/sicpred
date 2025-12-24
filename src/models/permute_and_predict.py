@@ -8,7 +8,7 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 import os
-import tqdm
+from tqdm import tqdm
 import torch
 import argparse
 
@@ -27,9 +27,13 @@ def permute_ds(
     Permute the specified variable in time.
     """
     rng = np.random.default_rng(random_seed)
-    permuted_indices = rng.permutation(ds.dims["start_prediction_month"])
+    perm = rng.permutation(ds.sizes["start_prediction_month"])
     permuted_ds = ds.copy()
-    permuted_ds[var_name] = ds[var_name].isel(start_prediction_month=permuted_indices)
+    permuted = ds.sel(channel=var_name).isel(start_prediction_month=perm).assign_coords(
+        start_prediction_month = ds.start_prediction_month
+    )
+
+    permuted_ds.loc[dict(channel=var_name)] = permuted
     return permuted_ds
 
 def main():
@@ -52,6 +56,7 @@ def main():
         default=None,
         help="Random seed for permutation",
     )
+    parser.add_argument("--overwrite", action="store_true", help="If set, overwrite existing output files.")
     args = parser.parse_args()
     config = load_config(args.config)
 
@@ -123,16 +128,17 @@ def main():
                 for time_idx, start_prediction_month in enumerate(tqdm(time_coords, desc=f"Member {member_id}")):
                     input_tensor = torch.tensor(
                         permuted_ds["data"].sel(start_prediction_month=start_prediction_month).values,
-                        dtype=torch.float32
-                    )
-                    predictions = model(input_tensor).cpu().numpy()  # Move predictions to CPU
+                        dtype=torch.float32,
+                        device=device
+                    ).unsqueeze(0)
+                    predictions = model(input_tensor).cpu().numpy()[0]  # Move predictions to CPU
                     ds["predictions"][time_idx, member_idx, nn_member_idx, :, :, :] = predictions
                 
     # Save the Dataset as NetCDF
-    output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config.EXPERIMENT_NAME)
+    output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config.EXPERIMENT_NAME, "permute")
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"{config.MODEL}_{config.CHECKPOINT_TO_EVALUATE}_predictions.nc")
-    ds.to_netcdf(output_path)
+    output_path = os.path.join(output_dir, f"permute_{args.var_name}_predictions.nc")
+    write_nc_file(ds, output_path, overwrite=args.overwrite)
     print(f"Predictions saved to {output_path}")
 
 if __name__ == "__main__":

@@ -135,7 +135,7 @@ def anomaly_persistence(data_split_settings, save_dir, max_lead_time=6):
     time_coords = time_coords_test - pd.DateOffset(months=1)
     icefrac_test_da = ds.icefrac.sel(time=time_coords, member_id=ensemble_members)
     
-    ds_means = xr.open_dataset(f"{config_cesm.PROCESSED_DATA_DIRECTORY}/normalized_inputs/{data_split_settings["name"]}/icefrac_mean.nc")
+    ds_means = xr.open_dataset(f"{config_cesm.PROCESSED_DATA_DIRECTORY}/normalized_inputs/{data_split_settings['name']}/icefrac_mean.nc")
     da_means = ds_means.icefrac 
 
     # compute the anomaly
