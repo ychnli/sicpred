@@ -5,7 +5,6 @@ from time import time
 import os
 import pickle
 from netCDF4 import Dataset
-import h5py
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn

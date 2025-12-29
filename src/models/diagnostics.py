@@ -24,7 +24,7 @@ def load_model_predictions(config):
     """
     """
     output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config["EXPERIMENT_NAME"])
-    output_path = os.path.join(output_dir, f"{config["MODEL"]}_{config["CHECKPOINT_TO_EVALUATE"]}_predictions.nc")
+    output_path = os.path.join(output_dir, f"{config['MODEL']}_{config['CHECKPOINT_TO_EVALUATE']}_predictions.nc")
     predictions = xr.open_dataset(output_path).predictions 
     return predictions 
 
@@ -43,7 +43,7 @@ def load_targets(config, split):
     return targets
 
 
-def calculate_acc(pred_anom, truth_anom, aggregate, dim=("x","y")):
+def calculate_acc(pred_anom, truth_anom, aggregate=False, dim=("x","y")):
     """
     Calculate the Anomaly Correlation Coefficient (ACC) between predictions and truth.
 
@@ -69,7 +69,7 @@ def calculate_acc(pred_anom, truth_anom, aggregate, dim=("x","y")):
     return acc
 
 
-def calculate_rmse(pred_anom, truth_anom, aggregate):
+def calculate_rmse(pred_anom, truth_anom, aggregate=False):
     """
     Calculate the Root Mean Square Error (RMSE) between predictions and truth,
     weighted by area.
@@ -109,8 +109,8 @@ def aggregate_metric(metric, dim):
 def main():
     parser = argparse.ArgumentParser(description="Compute diagnostics for model predictions.")
     parser.add_argument("--config", type=str, required=True, help="Path to the configuration file (e.g., config.py)")
-    parser.add_argument("--aggregate", action="store_true", help="If set, aggregate metrics over spatial dimensions.")
     parser.add_argument("--overwrite", action="store_true", help="If set, overwrite existing output files.")
+    parser.add_argument("--permute-var", type=str, default=None, help="If set, permute the specified variable before computing diagnostics.")
     args = parser.parse_args()
 
     config = util_shared.load_config(args.config)
@@ -118,29 +118,39 @@ def main():
     save_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config_dict["EXPERIMENT_NAME"], "diagnostics")
     os.makedirs(save_dir, exist_ok=True)
 
-    if not args.overwrite and os.path.exists(os.path.join(save_dir, "acc.nc")):
-        return
-
-    print(f"Computing diagnostics for {config_dict["EXPERIMENT_NAME"]}")
-
     targets = load_targets(config_dict, split="test")
-    predictions = load_model_predictions(config_dict)
 
+    if args.permute_var is not None:
+        predictions_fp = os.path.join(
+            config_cesm.PREDICTIONS_DIRECTORY, 
+            config_dict["EXPERIMENT_NAME"], 
+            "permute",
+            f"permute_{args.permute_var}_predictions.nc"
+        )
+        print(predictions_fp)
+        predictions = xr.open_dataset(predictions_fp)["predictions"]
 
-    if args.overwrite or not os.path.exists(os.path.join(save_dir, "acc.nc")):
+        label = f"_permute_{args.permute_var}"
+    else:
+        predictions = load_model_predictions(config_dict)
+        label = ""
+
+    print(f"Computing diagnostics for {config_dict['EXPERIMENT_NAME']}")
+
+    if args.overwrite or not os.path.exists(os.path.join(save_dir, f"acc{label}.nc")):
         print("Computing ACC...")
-        acc = calculate_acc(predictions, targets, aggregate=args.aggregate)
+        acc = calculate_acc(predictions, targets)
         acc_agg = aggregate_metric(acc, dim=("x","y"))
-        util_shared.write_nc_file(acc.to_dataset(name="acc"), os.path.join(save_dir, "acc.nc"), overwrite=args.overwrite)
-        util_shared.write_nc_file(acc_agg.to_dataset(name="acc"), os.path.join(save_dir, "acc_agg.nc"), overwrite=args.overwrite)
+        util_shared.write_nc_file(acc.to_dataset(name="acc"), os.path.join(save_dir, f"acc{label}.nc"), overwrite=args.overwrite)
+        util_shared.write_nc_file(acc_agg.to_dataset(name="acc"), os.path.join(save_dir, f"acc{label}_agg.nc"), overwrite=args.overwrite)
         print("done!\n")
     
-    if args.overwrite or not os.path.exists(os.path.join(save_dir, "rmse.nc")):
+    if args.overwrite or not os.path.exists(os.path.join(save_dir, f"rmse{label}.nc")):
         print("Computing RMSE...")
-        rmse = calculate_rmse(predictions, targets, aggregate=args.aggregate)
+        rmse = calculate_rmse(predictions, targets)
         rmse_agg = aggregate_metric(rmse, dim=("x","y"))
-        util_shared.write_nc_file(rmse.to_dataset(name="rmse"), os.path.join(save_dir, "rmse.nc"), overwrite=args.overwrite)
-        util_shared.write_nc_file(rmse_agg.to_dataset(name="rmse"), os.path.join(save_dir, "rmse_agg.nc"), overwrite=args.overwrite)
+        util_shared.write_nc_file(rmse.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}.nc"), overwrite=args.overwrite)
+        util_shared.write_nc_file(rmse_agg.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_agg.nc"), overwrite=args.overwrite)
         print("done!\n")
 
 
