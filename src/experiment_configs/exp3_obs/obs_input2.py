@@ -6,8 +6,8 @@ import pandas as pd
 from src.config_cesm import AVAILABLE_CESM_MEMBERS
 
 ################################ description ################################
-EXPERIMENT_NAME = "exp2_vol1"
-NOTES = "Inputs: same as input2. Data volume: 1 ens member. Detrended data"
+EXPERIMENT_NAME = "obs_input2"
+NOTES = "Inputs: same as input2. ERA5 data"
 DATE = "" # optional 
 
 ################################ data configs ################################
@@ -33,10 +33,10 @@ special_test_yrs = (pd.date_range("2014-01", "2014-12", freq="MS")).union(pd.dat
 
 DATA_SPLIT_SETTINGS = {
     "name": DATA_CONFIG_NAME, 
-    "split_by": "ensemble_member",
+    "split_by": "time",
     "train": pd.date_range("1979-01", "2011-12", freq="MS"), 
     "val": (pd.date_range("2012-01", "2019-12", freq="MS")).difference(special_test_yrs),
-    "test": (pd.date_range("2020-01", "2023-12", freq="MS")).union(special_test_yrs),
+    "test": (pd.date_range("2020-01", "2024-01", freq="MS")).union(special_test_yrs),
     "time_range": None,
     "member_ids": "obs"
 }

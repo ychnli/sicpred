@@ -81,7 +81,9 @@ def detrend_quadratic(da, time_dim='time'):
         if not sel.any(): continue
 
         t = time_numeric.sel({time_dim: sel})
-        Y = da_stacked.sel({time_dim: sel}).mean('member_id')
+        Y = da_stacked.sel({time_dim: sel})
+        if "member_id" in Y.dims:
+            Y = Y.mean('member_id')
         X = np.stack([np.ones_like(t), t, t**2], axis=1)
 
         beta = np.linalg.solve(X.T @ X, X.T @ Y.values)  # (3, space)
@@ -195,7 +197,10 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
         return None
 
     print(f"Normalizing {var_name}, divide_by_stdev = {divide_by_stdev}...", end=" ")
-    merged_ds = xr.open_dataset(os.path.join(config.DATA_DIRECTORY, "cesm_data", var_name, f"{var_name}_combined.nc"))
+    if data_split_settings["member_ids"] == "obs":
+        merged_ds = xr.open_dataset(os.path.join(config.DATA_DIRECTORY, "obs_data", f"{var_name}_obs.nc"))
+    else:
+        merged_ds = xr.open_dataset(os.path.join(config.DATA_DIRECTORY, "cesm_data", var_name, f"{var_name}_combined.nc"))
 
     # create a subsetted DataArray that contains the data requested by data_split_settings
     da = merged_ds[var_name]
@@ -223,11 +228,13 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
     else:
         raise ValueError("data_split_settings split_by must be 'time' or 'ensemble_member'")
 
+    dims_to_reduce = [d for d in ["time", "member_id"] if d in da.dims]
+
     if divide_by_stdev:
         print("calculating means and stdev...", end=" ")
 
-        monthly_means = da_train_subset.groupby("time.month").mean(dim=("time", "member_id")).load()
-        monthly_stdevs = da_train_subset.groupby("time.month").std(dim=("time", "member_id")).load()
+        monthly_means = da_train_subset.groupby("time.month").mean(dim=dims_to_reduce).load()
+        monthly_stdevs = da_train_subset.groupby("time.month").std(dim=dims_to_reduce).load()
         print("done!")
 
         months = da['time'].dt.month
@@ -245,8 +252,8 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
     else: 
         if use_min_max:
             print("calculating min and max...", end=" ")
-            monthly_mins = da_train_subset.groupby("time.month").min(dim=("time", "member_id")).load()
-            monthly_maxs = da_train_subset.groupby("time.month").max(dim=("time", "member_id")).load()
+            monthly_mins = da_train_subset.groupby("time.month").min(dim=dims_to_reduce).load()
+            monthly_maxs = da_train_subset.groupby("time.month").max(dim=dims_to_reduce).load()
             print("done!")
 
             months = da['time'].dt.month
@@ -257,7 +264,7 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
 
         else:
             print("calculating means...", end=" ")
-            monthly_means = da_train_subset.groupby("time.month").mean(dim=("time", "member_id")).load()
+            monthly_means = da_train_subset.groupby("time.month").mean(dim=dims_to_reduce).load()
             print("done!")
 
             months = da['time'].dt.month
@@ -273,6 +280,8 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
         print("done!")
 
     normalized_ds = normalized_da.to_dataset(name=var_name)
+    if "member_id" not in normalized_ds.indexes:
+        normalized_ds = normalized_ds.expand_dims("member_id")
 
     print("Saving...", end="")
     if divide_by_stdev: 
@@ -317,15 +326,17 @@ def load_inputs_data_da_dict(input_config, data_split_settings):
         data_da_dict[var] = ds[var]
 
     # make sure all the data arrays have the same member_ids 
-    common_member_ids = set()
-    for i,da in enumerate(data_da_dict.values()): 
-        if i == 0: 
-            common_member_ids = set(da.member_id.data)
-        else:
-            common_member_ids = common_member_ids & set(da.member_id.data)
+    if data_split_settings["member_ids"] != "obs":
+        common_member_ids = set()
+        for i,da in enumerate(data_da_dict.values()): 
+            if i == 0: 
+                common_member_ids = set(da.member_id.data)
+            else:
+                common_member_ids = common_member_ids & set(da.member_id.data)
 
     for var, da in data_da_dict.items():
-        da = da.sel(member_id = list(common_member_ids))
+        if data_split_settings["member_ids"] != "obs":
+            da = da.sel(member_id = list(common_member_ids))
         
         # drop this auxiliary variable that is leftover from normalization 
         da = da.drop_vars("month")
@@ -656,7 +667,8 @@ def calculate_monthly_weights(data_split_settings):
 
     fp = os.path.join(config.PROCESSED_DATA_DIRECTORY, "normalized_inputs", data_split_settings["name"], "icefrac_norm.nc")
     with xr.open_dataset(fp) as ds: 
-        weights = (ds["icefrac"] ** 2).groupby("time.month").mean(("time", "member_id", "x", "y"))
+        dims_to_reduce = [d for d in ["time", "member_id", "x", "y"] if d in ds.dims]
+        weights = (ds["icefrac"] ** 2).groupby("time.month").mean(dims_to_reduce)
         weights = (1/weights)
         weights = weights / weights.mean()
         weights = weights.values
