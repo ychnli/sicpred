@@ -36,7 +36,11 @@ class CESM_Dataset(torch.utils.data.Dataset):
         # Build a global index of samples
         self.samples = []
         if self.split_by == "time": 
-            for member_id in data_split_settings["member_ids"]:
+            if isinstance(data_split_settings["member_ids"], list):
+                member_ids = data_split_settings["member_ids"]
+            else:
+                member_ids = [data_split_settings["member_ids"]]
+            for member_id in member_ids:
                 input_file = os.path.join(self.data_dir, f"inputs_member_{member_id}.nc")
                 ds = xr.open_dataset(input_file) 
 

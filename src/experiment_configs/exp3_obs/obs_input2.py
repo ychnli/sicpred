@@ -38,7 +38,7 @@ DATA_SPLIT_SETTINGS = {
     "val": (pd.date_range("2012-01", "2019-12", freq="MS")).difference(special_test_yrs),
     "test": (pd.date_range("2020-01", "2024-01", freq="MS")).union(special_test_yrs),
     "time_range": None,
-    "member_ids": "obs"
+    "member_ids": ["obs"]
 }
 
 
@@ -89,10 +89,10 @@ LOSS_FUNCTION = "MSE"
 ############################# training configs ##############################
 LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-3
-BATCH_SIZE = 64
-NUM_EPOCHS = 20
-CHECKPOINT_INTERVAL = 1
-PATIENCE = 3
+BATCH_SIZE = 32
+NUM_EPOCHS = 1000
+CHECKPOINT_INTERVAL = 10
+PATIENCE = 50
 
 # Optional learning-rate scheduler (default is constant LR)
 #

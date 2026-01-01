@@ -326,7 +326,7 @@ def load_inputs_data_da_dict(input_config, data_split_settings):
         data_da_dict[var] = ds[var]
 
     # make sure all the data arrays have the same member_ids 
-    if data_split_settings["member_ids"] != "obs":
+    if data_split_settings["member_ids"] != ["obs"]:
         common_member_ids = set()
         for i,da in enumerate(data_da_dict.values()): 
             if i == 0: 
@@ -335,7 +335,7 @@ def load_inputs_data_da_dict(input_config, data_split_settings):
                 common_member_ids = common_member_ids & set(da.member_id.data)
 
     for var, da in data_da_dict.items():
-        if data_split_settings["member_ids"] != "obs":
+        if data_split_settings["member_ids"] != ["obs"]:
             da = da.sel(member_id = list(common_member_ids))
         
         # drop this auxiliary variable that is leftover from normalization 
