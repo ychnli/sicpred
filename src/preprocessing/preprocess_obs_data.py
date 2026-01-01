@@ -15,40 +15,6 @@ from src.utils import util_cesm
 from src import config_cesm
 import src.config as config_era5
 
-cesm_to_era5_varnames = {
-    "temp": "sea_surface_temperature",
-    "icefrac": "sea_ice_cover",
-    "psl": "mean_sea_level_pressure",
-}
-
-cesm_to_era5_short_varnames = {
-    "temp": "sst",
-    "icefrac": "siconc",
-    "psl": "msl"
-}
-
-def transform_obs_to_cesm_format(var_name, output_grid, savedir): 
-    os.makedirs(savedir, exist_ok=True)
-    savepath = os.path.join(savedir, f"{var_name}_obs.nc")
-    if (os.path.exists(savepath)): return 
-
-    ds = xr.open_dataset(os.path.join(config_cesm.DATA_DIRECTORY, f"ERA5/{cesm_to_era5_varnames[var_name]}.nc")).sel(latitude=slice(-30,-90))
-    weight_file = f'{config_cesm.DATA_DIRECTORY}/cesm_lens/grids/era5_small_to_sps_bilinear_regridding_weights.nc'
-    
-    if os.path.exists(weight_file):
-        regridder = xe.Regridder(ds, output_grid, 'bilinear', weights=weight_file, 
-                                ignore_degenerate=True, reuse_weights=True, periodic=True)
-    else:
-        regridder = xe.Regridder(ds, output_grid, 'bilinear', filename=weight_file, 
-                                ignore_degenerate=True, reuse_weights=False, periodic=True)
-    ds_regridded = regridder(ds)
-    ds_regridded = ds_regridded.sel(expver=1).combine_first(ds_regridded.sel(expver=5))
-
-    # rename variable
-    ds_regridded = ds_regridded.rename({cesm_to_era5_short_varnames[var_name]: var_name})
-
-    # save
-    ds_regridded.to_netcdf(savepath)
 
 def normalize_obs():
     data_da_dict = {}
