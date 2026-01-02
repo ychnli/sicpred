@@ -15,6 +15,7 @@ import random
 from src.models.models_util import CESM_Dataset
 from src.models.models import UNetRes3
 from src.models.models import SICNet
+from src.models.optim import build_lr_scheduler, build_optimizer
 from src.utils import util_cesm
 from src import config_cesm
 from src.models.losses import WeightedMSELoss
@@ -32,6 +33,8 @@ def train_epoch(
     dataloader,
     optimizer,
     loss_fn,
+    scheduler,
+    scheduler_interval,
     device,
     epoch,
     total_epochs,
@@ -60,11 +63,18 @@ def train_epoch(
         loss.backward()
         optimizer.step()
 
+        # If using a step-based scheduler, advance it once per optimizer step.
+        if scheduler is not None and scheduler_interval == "step":
+            scheduler.step()
+
         if wandb.run is not None and (global_step % log_each_n_steps == 0):
+            # Log the current learning rate (first param group) for visibility.
+            lr = optimizer.param_groups[0].get("lr", None)
             wandb.log(
                 {
                     "train/loss_step": loss.item(),
                     "train/epoch": epoch,
+                    "train/lr": lr,
                 },
                 step=global_step,
             )
@@ -170,10 +180,15 @@ def main():
             raise NotImplementedError(f"Model {config.MODEL} not implemented.")
         
         # initialize optimizer
-        optimizer = AdamW(
-            model.parameters(), 
-            lr=config.LEARNING_RATE, 
-            weight_decay=config.WEIGHT_DECAY
+        optimizer = build_optimizer(config, model)
+
+        # Optional LR scheduler (defaults to constant LR when not configured)
+        scheduler, scheduler_interval = build_lr_scheduler(
+            config,
+            optimizer,
+            steps_per_epoch=len(train_dataloader),
+            total_epochs=config.NUM_EPOCHS,
+            global_step=0,
         )
 
         # initialize loss function
@@ -206,6 +221,21 @@ def main():
                     best_val_loss = checkpoint.get("best_val_loss", float("inf"))
                     best_epoch = checkpoint.get("best_epoch", 0)
                     epochs_without_improvement = checkpoint.get("epochs_without_improvement", 0)
+
+                    # Re-create scheduler with the *new* total_epochs (so it spans
+                    # the full resumed run), then restore state if available.
+                    scheduler, scheduler_interval = build_lr_scheduler(
+                        config,
+                        optimizer,
+                        steps_per_epoch=len(train_dataloader),
+                        total_epochs=total_epochs,
+                        global_step=global_step,
+                    )
+                    if scheduler is not None and "scheduler_state_dict" in checkpoint:
+                        state = checkpoint["scheduler_state_dict"]
+                        if state is not None:
+                            scheduler.load_state_dict(state)
+
                     print(f"Resuming training from epoch {start_epoch} for {args.resume} additional epochs.")
             else:
                 print("No checkpoint found to resume from.")
@@ -220,6 +250,8 @@ def main():
                 train_dataloader,
                 optimizer,
                 loss_fn,
+                scheduler,
+                scheduler_interval,
                 device,
                 epoch,
                 total_epochs,
@@ -227,6 +259,10 @@ def main():
                 log_each_n_steps=1,
             )
             val_loss = validate_epoch(model, val_dataloader, loss_fn, device, epoch, total_epochs)
+
+            # If using an epoch-based scheduler, step it after validation.
+            if scheduler is not None and scheduler_interval == "epoch":
+                scheduler.step()
 
             # Log metrics to WandB
             wandb.log(
@@ -257,6 +293,7 @@ def main():
                         "global_step": global_step,
                         "model_state_dict": model.state_dict(),
                         "optimizer_state_dict": optimizer.state_dict(),
+                        "scheduler_state_dict": scheduler.state_dict() if scheduler is not None else None,
                         "best_val_loss": best_val_loss,
                         "best_epoch": best_epoch,
                         "epochs_without_improvement": epochs_without_improvement,
@@ -275,6 +312,7 @@ def main():
                     "global_step": global_step,
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
+                    "scheduler_state_dict": scheduler.state_dict() if scheduler is not None else None,
                     "best_val_loss": best_val_loss,
                     "best_epoch": best_epoch,
                     "epochs_without_improvement": epochs_without_improvement,

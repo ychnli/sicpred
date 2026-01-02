@@ -94,5 +94,39 @@ NUM_EPOCHS = 20
 CHECKPOINT_INTERVAL = 1
 PATIENCE = 3
 
+# Optional learning-rate scheduler (default is constant LR)
+#
+# Supported:
+#   - None / "constant": keep LEARNING_RATE fixed
+#   - "cosine_with_warmup": linear warmup then cosine decay (step-based)
+#   - "cosine": cosine annealing without warmup (epoch-based)
+#   - "warm_restarts": cosine annealing with warm restarts (epoch-based)
+#
+# Examples:
+#
+# 1) Warmup + cosine decay (step-based)
+# LR_SCHEDULER = "cosine_with_warmup"
+# LR_SCHEDULER_ARGS = {
+#     # set either warmup_steps or warmup_epochs
+#     "warmup_steps": 500,
+#     # "warmup_epochs": 1,
+#     "min_lr_ratio": 0.05,
+# }
+#
+# 2) Cosine annealing (no warmup, epoch-based)
+# LR_SCHEDULER = "cosine"
+# LR_SCHEDULER_ARGS = {
+#     "t_max": NUM_EPOCHS,   # number of epochs for one cosine cycle
+#     "eta_min": 0.0,        # absolute minimum LR
+# }
+#
+# 3) Cosine annealing with warm restarts (epoch-based)
+# LR_SCHEDULER = "warm_restarts"
+# LR_SCHEDULER_ARGS = {
+#     "t_0": 10,             # epochs until first restart
+#     "t_mult": 2,           # cycle length multiplier after each restart
+#     "eta_min": 0.0,
+# }
+
 ############################# evaluation configs #############################
 CHECKPOINT_TO_EVALUATE = "best"
