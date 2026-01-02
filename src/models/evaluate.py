@@ -12,6 +12,7 @@ from tqdm import tqdm
 from src.models.models_util import CESM_Dataset
 from src.models.models import UNetRes3
 from src.utils import util_cesm
+from src.utils import util_shared
 from src import config_cesm
 
 
@@ -35,12 +36,14 @@ def main():
     parser = argparse.ArgumentParser(description="Train a model with specified config.")
     parser.add_argument("--config", type=str, required=True, help="Path to the configuration file (e.g., config.py)")
     parser.add_argument("--device", type=str, help="cuda or cpu")
+    parser.add_argument("--split", type=str, default="test")
+    parser.add_argument("--overwrite", action="store_true", help="If set, overwrite existing output files.")
     args = parser.parse_args()
     
     # Load configurations
     config = load_config(args.config)
 
-    test_dataset = CESM_Dataset("test", config.DATA_SPLIT_SETTINGS)
+    test_dataset = CESM_Dataset(args.split, config.DATA_SPLIT_SETTINGS)
     test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=2)
     if args.device in ["cuda", "cpu"]: 
         device = torch.device(args.device) 
@@ -60,11 +63,17 @@ def main():
 
     # Initialize an empty dataset 
     if config.DATA_SPLIT_SETTINGS["split_by"] == "ensemble_member":
-        ensemble_members = config.DATA_SPLIT_SETTINGS["test"]
+        if args.split == 'all':
+            ensemble_members = [*config.DATA_SPLIT_SETTINGS["train"], *config.DATA_SPLIT_SETTINGS["val"], *config.DATA_SPLIT_SETTINGS["test"]]
+        else:
+            ensemble_members = config.DATA_SPLIT_SETTINGS["test"]
         time_coords = config.DATA_SPLIT_SETTINGS["time_range"]
     elif config.DATA_SPLIT_SETTINGS["split_by"] == "time":
         ensemble_members = config.DATA_SPLIT_SETTINGS["member_ids"]
-        time_coords = config.DATA_SPLIT_SETTINGS["test"]
+        if args.split == 'all':
+            time_coords = config.DATA_SPLIT_SETTINGS["train"].union(config.DATA_SPLIT_SETTINGS["val"]).union(config.DATA_SPLIT_SETTINGS["test"])
+        else:
+            time_coords = config.DATA_SPLIT_SETTINGS["test"]
     num_members = len(ensemble_members)
     channels, x_dim, y_dim = config.MAX_LEAD_MONTHS, 80, 80
     reference_grid = util_cesm.generate_sps_grid()
@@ -127,7 +136,7 @@ def main():
     output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config.EXPERIMENT_NAME)
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"{config.MODEL}_{config.CHECKPOINT_TO_EVALUATE}_predictions.nc")
-    ds.to_netcdf(output_path)
+    util_shared.write_nc_file(ds, output_path, overwrite=args.overwrite)
     print(f"Predictions saved to {output_path}")
 
 if __name__ == "__main__":

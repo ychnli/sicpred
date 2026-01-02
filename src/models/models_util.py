@@ -21,7 +21,7 @@ class CESM_Dataset(torch.utils.data.Dataset):
     def __init__(self, split, data_split_settings):
         """
         Param:
-            (string)        split ('test', 'val', or 'train')
+            (string)        split ('test', 'val', or 'train', or 'all)
             (dict)          data_split_settings
 
         """
@@ -31,7 +31,13 @@ class CESM_Dataset(torch.utils.data.Dataset):
 
         # Extract split settings
         self.split_by = data_split_settings["split_by"]
-        self.split_range = data_split_settings[split]
+        if split == 'all':
+            if self.split_by == "time":
+                self.split_range = data_split_settings["train"].union(data_split_settings["val"]).union(data_split_settings["test"])
+            else:
+                raise NotImplementedError()
+        else:
+            self.split_range = data_split_settings[split]
 
         # Build a global index of samples
         self.samples = []

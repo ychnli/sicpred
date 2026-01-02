@@ -6,7 +6,9 @@ import argparse
 from src.utils import util_cesm
 from src.utils import util_shared
 from src import config_cesm
+from src.models import baselines
 
+REFERENCE_GRID = util_cesm.generate_sps_grid()
 AREA_WEIGHTS = util_cesm.calculate_area_weights()
 
 def get_ensemble_members_and_time_coords(data_split_settings, split):
@@ -88,7 +90,11 @@ def calculate_rmse(pred_anom, truth_anom, aggregate=False):
         rmse = aggregate_metric(rmse, dim=("x","y"))
     
     return rmse
-    
+
+def calculate_iiee(pred_anom, truth_anom):
+    # TODO 
+    return 
+
 
 def roll_metric(metric):
     return xr.concat(
@@ -110,11 +116,13 @@ def main():
     parser = argparse.ArgumentParser(description="Compute diagnostics for model predictions.")
     parser.add_argument("--config", type=str, required=True, help="Path to the configuration file (e.g., config.py)")
     parser.add_argument("--overwrite", action="store_true", help="If set, overwrite existing output files.")
+    parser.add_argument("--baselines", action="store_true", help="If set, calculates persistence and climatology baselines too.")
     parser.add_argument("--permute-var", type=str, default=None, help="If set, permute the specified variable before computing diagnostics.")
     args = parser.parse_args()
 
     config = util_shared.load_config(args.config)
     config_dict = util_shared.load_globals(config)
+    base_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config_dict["EXPERIMENT_NAME"])
     save_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config_dict["EXPERIMENT_NAME"], "diagnostics")
     os.makedirs(save_dir, exist_ok=True)
 
@@ -152,6 +160,25 @@ def main():
         util_shared.write_nc_file(rmse.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}.nc"), overwrite=args.overwrite)
         util_shared.write_nc_file(rmse_agg.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_agg.nc"), overwrite=args.overwrite)
         print("done!\n")
+
+    if args.baselines:
+        print(f"Computing ACC and RMSE for persistence and climatology forecasts...")
+        persistence_pred = baselines.anomaly_persistence(config_dict["DATA_SPLIT_SETTINGS"], os.path.join(base_dir, "baselines"))
+        acc = calculate_acc(persistence_pred, targets)
+        acc_agg = aggregate_metric(acc, dim=("x","y"))
+        util_shared.write_nc_file(acc.to_dataset(name="acc"), os.path.join(save_dir, f"acc{label}_persist.nc"), overwrite=args.overwrite)
+        util_shared.write_nc_file(acc_agg.to_dataset(name="acc"), os.path.join(save_dir, f"acc{label}_agg_persist.nc"), overwrite=args.overwrite)
+        
+        rmse = calculate_rmse(persistence_pred, targets)
+        rmse_agg = aggregate_metric(rmse, dim=("x","y"))
+        util_shared.write_nc_file(rmse.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_persist.nc"), overwrite=args.overwrite)
+        util_shared.write_nc_file(rmse_agg.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_agg_persist.nc"), overwrite=args.overwrite)
+
+        climatology_pred = xr.zeros_like(targets)
+        rmse = calculate_rmse(climatology_pred, targets)
+        rmse_agg = aggregate_metric(rmse, dim=("x","y"))
+        util_shared.write_nc_file(rmse.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_climatology.nc"), overwrite=args.overwrite)
+        util_shared.write_nc_file(rmse_agg.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_agg_climatology.nc"), overwrite=args.overwrite)
 
 
 if __name__ == "__main__":

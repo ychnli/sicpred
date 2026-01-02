@@ -674,3 +674,32 @@ def calculate_monthly_weights(data_split_settings):
         weights = weights.values
     
     return weights
+
+
+def generate_empty_predictions_ds(
+    time_coords, 
+    ensemble_members, 
+    num_nn_members, 
+    max_lead_time=6, 
+    reference_grid=generate_sps_grid()
+):
+    x_dim, y_dim = reference_grid.sizes["x"], reference_grid.sizes["y"]
+    num_members = len(ensemble_members)
+
+    return xr.Dataset(
+        {
+            "predictions": (
+                ["start_prediction_month", "member_id", "nn_member_id", "lead_time", "y", "x"],
+                np.full((len(time_coords), num_members, num_nn_members, max_lead_time, y_dim, x_dim), 
+                        np.nan, dtype=np.float32)
+            )
+        },
+        coords={
+            "start_prediction_month": time_coords,
+            "member_id": ensemble_members,
+            "nn_member_id": np.arange(num_nn_members),
+            "lead_time": np.arange(1, max_lead_time + 1),
+            "y": reference_grid.y.values,
+            "x": reference_grid.x.values,
+        }
+    )

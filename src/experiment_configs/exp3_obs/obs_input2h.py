@@ -6,7 +6,7 @@ import pandas as pd
 from src.config_cesm import AVAILABLE_CESM_MEMBERS
 
 ################################ description ################################
-EXPERIMENT_NAME = "obs_input2"
+EXPERIMENT_NAME = "obs_input2h"
 NOTES = "Inputs: same as input2. ERA5 data"
 DATE = "" # optional 
 
@@ -87,9 +87,9 @@ MODEL_ARGS = {
 LOSS_FUNCTION = "MSE" 
 
 ############################# training configs ##############################
-LEARNING_RATE = 1e-3
-WEIGHT_DECAY = 1e-2
-BATCH_SIZE = 32
+LEARNING_RATE = 3e-4
+WEIGHT_DECAY = 5e-3
+BATCH_SIZE = 8
 NUM_EPOCHS = 100
 CHECKPOINT_INTERVAL = 10
 PATIENCE = 20
@@ -104,8 +104,8 @@ PATIENCE = 20
 
 LR_SCHEDULER = "cosine"
 LR_SCHEDULER_ARGS = {
-    "t_max": 50,   # number of epochs for one cosine cycle
-    "eta_min": 5e-5,        # absolute minimum LR
+    "t_max": NUM_EPOCHS,   # number of epochs for one cosine cycle
+    "eta_min": 0.0,        # absolute minimum LR
 }
 
 # Examples:
