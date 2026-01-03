@@ -112,11 +112,29 @@ def aggregate_metric(metric, dim):
     return roll_metric(metric)
 
 
+def compute_ice_mask(data_source):
+    if data_source not in ["cesm", "obs"]:
+        raise ValueError(f"data_source should be one of 'cesm', 'obs', but was {data_source}")
+
+    if data_source == "cesm":
+        icefrac_ds = xr.open_dataset(os.path.join(config_cesm.DATA_DIRECTORY, "cesm_data/icefrac/icefrac_combined.nc"))
+        save_name = os.path.join(config_cesm.DATA_DIRECTORY, "cesm_data/grids/icefrac_occurrence_mask.nc")
+    if data_source == "obs":
+        icefrac_ds = xr.open_dataset(os.path.join(config_cesm.DATA_DIRECTORY, "obs_data/icefrac_obs.nc"))
+        save_name = os.path.join(config_cesm.DATA_DIRECTORY, "obs_data/icefrac_occurrence_mask.nc")
+
+    if os.path.exists(save_name):
+        return
+    
+    icefrac_mean = icefrac_ds["icefrac"].mean("member_id", "")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Compute diagnostics for model predictions.")
     parser.add_argument("--config", type=str, required=True, help="Path to the configuration file (e.g., config.py)")
     parser.add_argument("--overwrite", action="store_true", help="If set, overwrite existing output files.")
     parser.add_argument("--baselines", action="store_true", help="If set, calculates persistence and climatology baselines too.")
+    parser.add_argument("--ensemble-mean", action="store_true", help="If set, computes the ensemble mean prediction and calculates the diagnostics for it.")
     parser.add_argument("--permute-var", type=str, default=None, help="If set, permute the specified variable before computing diagnostics.")
     args = parser.parse_args()
 
@@ -143,6 +161,14 @@ def main():
         predictions = load_model_predictions(config_dict)
         label = ""
 
+    if args.ensemble_mean:
+        # add an ensemble mean prediction with nn_member_id label -1
+        # so that the diagnostics will be calculated for this forecast as well
+        predictions = xr.concat(
+            [predictions, predictions.mean("nn_member_id").expand_dims({"nn_member_id": [-1]})],
+            dim='nn_member_id'
+        )
+
     print(f"Computing diagnostics for {config_dict['EXPERIMENT_NAME']}")
 
     if args.overwrite or not os.path.exists(os.path.join(save_dir, f"acc{label}.nc")):
@@ -163,13 +189,13 @@ def main():
 
     if args.baselines:
         print(f"Computing ACC and RMSE for persistence and climatology forecasts...")
-        persistence_pred = baselines.anomaly_persistence(config_dict["DATA_SPLIT_SETTINGS"], os.path.join(base_dir, "baselines"))
-        acc = calculate_acc(persistence_pred, targets)
+        persistence_pred = baselines.anomaly_persistence(config_dict["DATA_SPLIT_SETTINGS"], os.path.join(base_dir, "baselines"), overwrite=args.overwrite)
+        acc = calculate_acc(persistence_pred["predictions"], targets)
         acc_agg = aggregate_metric(acc, dim=("x","y"))
         util_shared.write_nc_file(acc.to_dataset(name="acc"), os.path.join(save_dir, f"acc{label}_persist.nc"), overwrite=args.overwrite)
         util_shared.write_nc_file(acc_agg.to_dataset(name="acc"), os.path.join(save_dir, f"acc{label}_agg_persist.nc"), overwrite=args.overwrite)
         
-        rmse = calculate_rmse(persistence_pred, targets)
+        rmse = calculate_rmse(persistence_pred["predictions"], targets)
         rmse_agg = aggregate_metric(rmse, dim=("x","y"))
         util_shared.write_nc_file(rmse.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_persist.nc"), overwrite=args.overwrite)
         util_shared.write_nc_file(rmse_agg.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_agg_persist.nc"), overwrite=args.overwrite)
@@ -179,6 +205,7 @@ def main():
         rmse_agg = aggregate_metric(rmse, dim=("x","y"))
         util_shared.write_nc_file(rmse.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_climatology.nc"), overwrite=args.overwrite)
         util_shared.write_nc_file(rmse_agg.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_agg_climatology.nc"), overwrite=args.overwrite)
+        print("done!\n")
 
 
 if __name__ == "__main__":

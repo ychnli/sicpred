@@ -6,7 +6,7 @@ import pandas as pd
 from src.config_cesm import AVAILABLE_CESM_MEMBERS
 
 ################################ description ################################
-EXPERIMENT_NAME = "obs_input4"
+EXPERIMENT_NAME = "obs_input4_ensemble"
 NOTES = "Inputs: same as input4. ERA5 data"
 DATE = "" # optional 
 
@@ -88,11 +88,16 @@ LOSS_FUNCTION = "MSE"
 
 ############################# training configs ##############################
 LEARNING_RATE = 1e-3
-WEIGHT_DECAY = 1e-3
-BATCH_SIZE = 64
-NUM_EPOCHS = 20
-CHECKPOINT_INTERVAL = 1
-PATIENCE = 3
+WEIGHT_DECAY = 5e-2
+BATCH_SIZE = 32
+NUM_EPOCHS = 50
+CHECKPOINT_INTERVAL = 10
+PATIENCE = 10
+LR_SCHEDULER = "cosine"
+LR_SCHEDULER_ARGS = {
+    "t_max": 50,
+    "eta_min": 5e-5,
+}
 
 ############################# evaluation configs #############################
 CHECKPOINT_TO_EVALUATE = "best"

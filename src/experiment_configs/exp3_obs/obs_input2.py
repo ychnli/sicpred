@@ -6,7 +6,7 @@ import pandas as pd
 from src.config_cesm import AVAILABLE_CESM_MEMBERS
 
 ################################ description ################################
-EXPERIMENT_NAME = "obs_input2"
+EXPERIMENT_NAME = "obs_input2_ensemble"
 NOTES = "Inputs: same as input2. ERA5 data"
 DATE = "" # optional 
 
@@ -88,11 +88,11 @@ LOSS_FUNCTION = "MSE"
 
 ############################# training configs ##############################
 LEARNING_RATE = 1e-3
-WEIGHT_DECAY = 1e-2
+WEIGHT_DECAY = 5e-2
 BATCH_SIZE = 32
-NUM_EPOCHS = 100
+NUM_EPOCHS = 50
 CHECKPOINT_INTERVAL = 10
-PATIENCE = 20
+PATIENCE = 10
 
 # Optional learning-rate scheduler (default is constant LR)
 #

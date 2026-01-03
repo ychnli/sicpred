@@ -5,8 +5,9 @@ import os
 
 from src import config_cesm
 from src.utils import util_cesm
+from src.utils import util_shared
 
-def anomaly_persistence(data_split_settings, save_dir, max_lead_time=6):
+def anomaly_persistence(data_split_settings, save_dir, max_lead_time=6, overwrite=False):
     """
     Computes the anomaly persistence baseline (carries forward the anomaly from some init month)
     on the test dataset. 
@@ -28,9 +29,10 @@ def anomaly_persistence(data_split_settings, save_dir, max_lead_time=6):
     if save_dir is not None:
         os.makedirs(save_dir, exist_ok=True)
         save_name = os.path.join(save_dir, "persistence_predictions.nc")
-        if os.path.exists(save_name):
-            print(f"Found pre-existing file with path {save_name}. Skipping...")
-            return 
+        if os.path.exists(save_name) and not overwrite:
+            print(f"Info: found pre-existing {save_name}")
+            ds = xr.open_dataset(save_name)
+            return ds
 
     # Load the data
     ds = xr.open_dataset(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", data_split_settings["name"], "icefrac_norm.nc"))
@@ -49,22 +51,18 @@ def anomaly_persistence(data_split_settings, save_dir, max_lead_time=6):
     
     # Initialize an empty xarray Dataset
     reference_grid = anom_da # this just needs to have x and y
-    ds = util_cesm.generate_empty_predictions_ds(time_coords, ensemble_members, num_nn_members=1)
+    ds = util_cesm.generate_empty_predictions_ds(time_coords_test, ensemble_members, num_nn_members=1)
 
     for i, start_month in enumerate(time_coords_test):
         for j in range(max_lead_time):
             # init_month is the month before the prediction and is the anomaly we want to carry forward
             init_month = start_month - pd.DateOffset(months=1)
-            pred_month = start_month + pd.DateOffset(months=j)
             pred = anom_da.sel(time=init_month).values
-            ds["predictions"][i, :, j, :, :] = pred
+            ds["predictions"][i, :, 0, j, :, :] = pred
     
-    # clip unphysical predictions outside [0,1]
-    ds["predictions"] = ds["predictions"].clip(0, 1)
-
     # save 
     if save_dir is not None:
-        ds.to_netcdf(save_name) 
+        util_shared.write_nc_file(ds, save_name, overwrite)
         
     return ds
 
