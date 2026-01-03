@@ -59,9 +59,6 @@ def calculate_acc(pred_anom, truth_anom, aggregate=False, dim=("x","y")):
     Returns:
     - xr.DataArray: ACC values with dimensions remaining after collapsing `dim`.
     """
-    # # Ensure dimensions match
-    # if pred_anom.dims != truth_anom.dims:
-    #     raise ValueError("Predictions and truth must have the same dimensions.")
 
     acc = xr.cov(pred_anom, truth_anom, dim=dim) / (pred_anom.std(dim=dim) * truth_anom.std(dim=dim))
 
@@ -113,20 +110,34 @@ def aggregate_metric(metric, dim):
 
 
 def compute_ice_mask(data_source):
+    """
+    Compute and save ice occurrence mask based on mean ice fraction. Any grid cell that
+    has ice fraction > 0 at any time is marked as 1 in the mask, else 0. We will use this
+    mask to mask out points that are trivially 0 when calculating metrics.
+
+    Parameters:
+    - data_source (str): "cesm" or "obs"
+
+    Returns:
+    - xr.DataArray: ice occurrence mask
+    """
     if data_source not in ["cesm", "obs"]:
         raise ValueError(f"data_source should be one of 'cesm', 'obs', but was {data_source}")
 
     if data_source == "cesm":
         icefrac_ds = xr.open_dataset(os.path.join(config_cesm.DATA_DIRECTORY, "cesm_data/icefrac/icefrac_combined.nc"))
-        save_name = os.path.join(config_cesm.DATA_DIRECTORY, "cesm_data/grids/icefrac_occurrence_mask.nc")
+        save_name = os.path.join(config_cesm.DATA_DIRECTORY, "cesm_data/grids/ice_occurrence_mask.nc")
     if data_source == "obs":
         icefrac_ds = xr.open_dataset(os.path.join(config_cesm.DATA_DIRECTORY, "obs_data/icefrac_obs.nc"))
-        save_name = os.path.join(config_cesm.DATA_DIRECTORY, "obs_data/icefrac_occurrence_mask.nc")
+        save_name = os.path.join(config_cesm.DATA_DIRECTORY, "obs_data/ice_occurrence_mask.nc")
 
     if os.path.exists(save_name):
-        return
+        return xr.open_dataset(save_name)["mask"]
     
-    icefrac_mean = icefrac_ds["icefrac"].mean("member_id", "")
+    icefrac_mean = icefrac_ds["icefrac"].mean(("member_id", "time"))
+    ice_occurrence_mask = (icefrac_mean > 0).astype(np.float32)
+    ice_occurrence_mask.to_dataset(name="mask").to_netcdf(save_name)
+    return ice_occurrence_mask
 
 
 def main():
@@ -168,6 +179,12 @@ def main():
             [predictions, predictions.mean("nn_member_id").expand_dims({"nn_member_id": [-1]})],
             dim='nn_member_id'
         )
+
+    # mask out points that are always ice-free in the dataset
+    ice_mask = compute_ice_mask(data_source="obs")
+    predictions = predictions.where(ice_mask == 1)
+    targets = targets.where(ice_mask == 1)
+
 
     print(f"Computing diagnostics for {config_dict['EXPERIMENT_NAME']}")
 
