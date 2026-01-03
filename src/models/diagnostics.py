@@ -181,7 +181,11 @@ def main():
         )
 
     # mask out points that are always ice-free in the dataset
-    ice_mask = compute_ice_mask(data_source="obs")
+    if config_dict["DATA_SPLIT_SETTINGS"]["member_ids"] == ["obs"]:
+        data_source = "obs"
+    else:
+        data_source = "cesm"
+    ice_mask = compute_ice_mask(data_source=data_source)
     predictions = predictions.where(ice_mask == 1)
     targets = targets.where(ice_mask == 1)
 
