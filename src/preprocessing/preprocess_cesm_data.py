@@ -21,10 +21,11 @@ def load_config(config_path):
     return config
 
 def check_for_sst_issue(config):
-    member_ids = config.DATA_SPLIT_SETTINGS["test"] + config.DATA_SPLIT_SETTINGS["val"] + config.DATA_SPLIT_SETTINGS["train"]
-    if len(set(member_ids) & set(problematic_member_id)) != 0:
-        if config.INPUT_CONFIG["sst"]["include"]:
-            raise ValueError("this data split contains ensemble members with corrupted SST")
+    if config.DATA_SPLIT_SETTINGS["member_ids"] == None:
+        member_ids = config.DATA_SPLIT_SETTINGS["test"] + config.DATA_SPLIT_SETTINGS["val"] + config.DATA_SPLIT_SETTINGS["train"]
+        if len(set(member_ids) & set(problematic_member_id)) != 0:
+            if config.INPUT_CONFIG["sst"]["include"]:
+                raise ValueError("this data split contains ensemble members with corrupted SST")
 
 def main():
     parser = argparse.ArgumentParser(description="prepare data with specified config")

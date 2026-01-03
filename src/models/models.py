@@ -97,142 +97,6 @@ def linear_trend(target_month, save_path, linear_years="all", verbose=1):
     return prediction
 
 
-def anomaly_persistence(data_split_settings, save_dir, max_lead_time=6):
-    """
-    The anomaly persistence baseline model (carries forward the anomaly from some init month)
-    This returns a dataset of the same format as the ML prediction models which makes comparing
-    predictions a little easier. Note that start_prediction_month corresponds to the first month
-    of the prediction, so the anomaly used for each prediction is taken from the month preceding
-    the start_prediction_month. 
-
-    Param:
-        (dict)          data_split_settings: dictionary containing the data split settings 
-        (str)           save_dir 
-    
-    Returns:
-        (xr.Dataset)    predictions: the anomaly persistence predictions
-    """
-
-    # Check if the file already exists
-    if save_dir is not None:
-        save_name = os.path.join(save_dir, "anomaly_persistence_predictions.nc")
-        if os.path.exists(save_name):
-            print(f"Found pre-existing file with path {save_name}. Skipping...")
-            return 
-
-    # Load the data
-    ds = xr.open_dataset(f"{config_cesm.RAW_DATA_DIRECTORY}/icefrac_combined.nc")
-    if data_split_settings["split_by"] == "ensemble_member":
-        ensemble_members = data_split_settings["test"]
-        time_coords_test = data_split_settings["time_range"]
-    elif data_split_settings["split_by"] == "time":
-        ensemble_members = data_split_settings["member_ids"]
-        time_coords_test = data_split_settings["test"]
-
-    # these are all times needed to compute the persistence forecast over the test period
-    # the months are shifted back by 1 because each prediction requires the previous
-    # month's anomaly
-    time_coords = time_coords_test - pd.DateOffset(months=1)
-    icefrac_test_da = ds.icefrac.sel(time=time_coords, member_id=ensemble_members)
-    
-    ds_means = xr.open_dataset(f"{config_cesm.PROCESSED_DATA_DIRECTORY}/normalized_inputs/{data_split_settings['name']}/icefrac_mean.nc")
-    da_means = ds_means.icefrac 
-
-    # compute the anomaly
-    months = icefrac_test_da['time'].dt.month
-    anom_da = icefrac_test_da - da_means.sel(month=months)
-
-    # Initialize an empty xarray Dataset
-    reference_grid = da_means # this just needs to have x and y
-    ds = models_util.generate_empty_predictions_ds(reference_grid, time_coords_test, ensemble_members, max_lead_time, 80, 80)
-
-    for i, start_month in enumerate(time_coords_test):
-        for j in range(max_lead_time):
-            # init_month is the month before the prediction and is the anomaly we want to carry forward
-            init_month = start_month - pd.DateOffset(months=1)
-            pred_month = start_month + pd.DateOffset(months=j)
-            pred = anom_da.sel(time=init_month).values + da_means.sel(month=pred_month.month).values
-            ds["predictions"][i, :, j, :, :] = pred
-    
-    # clip unphysical predictions outside [0,1]
-    ds["predictions"] = ds["predictions"].clip(0, 1)
-
-    # save 
-    if save_dir is not None:
-        ds.to_netcdf(save_name) 
-        
-    return ds
-
-
-def climatology_predictions(data_split_settings, save_dir, max_lead_time=6):
-    """
-    The climatology baseline model. If split_by is "time", the climatology is computed
-    over the train subset. If split_by is "ensemble_member", the climatology is computed
-    over each ensemble member in the train subset for each year separately.
-
-    Param:
-        (dict)          data_split_settings: dictionary containing the data split settings 
-        (str)           save_dir 
-    
-    Returns:
-        (xr.Dataset)    predictions
-    """
-    
-    # Check if the file already exists
-    if save_dir is not None:
-        save_name = os.path.join(save_dir, "climatology_predictions.nc")
-        if os.path.exists(save_name):
-            print(f"Found pre-existing file with path {save_name}. Skipping...")
-            return 
-
-    # Load the data
-    ds = xr.open_dataset(f"{config_cesm.RAW_DATA_DIRECTORY}/icefrac_combined.nc")
-    if data_split_settings["split_by"] == "ensemble_member":
-        # use these ensemble_members and time_coords to calculate climatology over train subset
-        ensemble_members = data_split_settings["train"]
-        time_coords = pd.date_range(data_split_settings["time_range"][0],
-                                    data_split_settings["time_range"][-1] + pd.DateOffset(months=max_lead_time),
-                                    freq="MS")
-
-        da = ds.icefrac.sel(time=time_coords, member_id=ensemble_members)
-        da_means = da.mean("member_id")
-
-        # use these ensemble_members and time_coords to make the test predictions dataset
-        ensemble_members = data_split_settings["test"]
-        time_coords = data_split_settings["time_range"]
-        
-    elif data_split_settings["split_by"] == "time":
-        # use these ensemble_members and time_coords to calculate climatology over train subset
-        ensemble_members = data_split_settings["member_ids"]
-        time_coords = data_split_settings["train"]
-
-        da = ds.icefrac.sel(time=time_coords, member_id=ensemble_members)
-        da_means = da.groupby("time.month").mean(("time", "member_id")) 
-
-        # use these time_coords to make the test predictions dataset
-        time_coords = data_split_settings["test"]
-    
-    reference_grid = da_means # this just needs to have x and y 
-    ds = models_util.generate_empty_predictions_ds(reference_grid, time_coords, ensemble_members, max_lead_time, 80, 80)
-
-    for i, start_month in enumerate(time_coords):
-        for j in range(max_lead_time):
-            pred_month = (start_month + pd.DateOffset(months=j))
-
-            if data_split_settings["split_by"] == "ensemble_member":
-                pred = da_means.sel(time=pred_month).values
-            elif data_split_settings["split_by"] == "time":
-                pred = da_means.sel(month=pred_month.month).values
-                
-            ds["predictions"][i, :, j, :, :] = pred
-
-    # save 
-    if save_dir is not None:
-        ds.to_netcdf(save_name) 
-
-    return ds
-
-
 class UNetRes3(nn.Module):
     """
     Builds a UNet of resolution 3 (nomenclature from Williams et al. 2023)
@@ -247,7 +111,7 @@ class UNetRes3(nn.Module):
                 n_channels_factor=1, 
                 filter_size=3, 
                 clip_near_zero_values=True, 
-                epsilon=0.01):
+                epsilon=0.02):
 
         super(UNetRes3, self).__init__()
         self.clip_near_zero_values = clip_near_zero_values
@@ -277,7 +141,7 @@ class UNetRes3(nn.Module):
         # Make a land mask tensor that is the same shape as the output tensor
         land_mask = self.create_inverted_land_mask()
         self.register_buffer("land_mask", land_mask)
-    
+
     def create_inverted_land_mask(self):
         """
         Creates an inverted land mask (0s on land and 1s on ocean) according to the icefrac land 

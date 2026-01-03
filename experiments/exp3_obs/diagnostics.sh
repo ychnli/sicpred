@@ -1,0 +1,2 @@
+python3 -m src.models.diagnostics --config src/experiment_configs/exp3_obs/obs_input2.py --ensemble-mean
+python3 -m src.models.diagnostics --config src/experiment_configs/exp3_obs/obs_input2.py --ensemble-mean
