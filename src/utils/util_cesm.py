@@ -197,7 +197,7 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
         return None
 
     print(f"Normalizing {var_name}, divide_by_stdev = {divide_by_stdev}...", end=" ")
-    if data_split_settings["member_ids"] == "obs":
+    if data_split_settings["member_ids"] == ["obs"]:
         merged_ds = xr.open_dataset(os.path.join(config.DATA_DIRECTORY, "obs_data", f"{var_name}_obs.nc"))
     else:
         merged_ds = xr.open_dataset(os.path.join(config.DATA_DIRECTORY, "cesm_data", var_name, f"{var_name}_combined.nc"))
@@ -211,7 +211,7 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
         # all_times gives all time coordinates that are accessed, given variable leads and lags
         all_times = pd.date_range(all_times[0] - pd.DateOffset(months=max_lag_months), 
                                   all_times[-1] + pd.DateOffset(months=max_lead_months-1),
-                                  freq="MS")        
+                                  freq="MS")
         da = da.sel(time=all_times, member_id=data_split_settings["member_ids"]) 
         da_train_subset = da.sel(time=data_split_settings["train"])
 

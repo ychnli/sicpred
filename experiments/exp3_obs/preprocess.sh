@@ -1,1 +1,2 @@
 python3 -m src.preprocessing.preprocess_cesm_data --config src/experiment_configs/exp3_obs/obs_input2.py
+python3 -m src.preprocessing.preprocess_cesm_data --config src/experiment_configs/exp3_obs/obs_input4.py

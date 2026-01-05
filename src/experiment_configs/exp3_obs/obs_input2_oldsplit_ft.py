@@ -6,15 +6,15 @@ import pandas as pd
 from src.config_cesm import AVAILABLE_CESM_MEMBERS
 
 ################################ description ################################
-EXPERIMENT_NAME = "obs_input4_ensemble"
-NOTES = "Inputs: same as input4. ERA5 data"
+EXPERIMENT_NAME = "obs_input2_oldsplit_ft"
+NOTES = "Inputs: same as input2. ERA5 data"
 DATE = "" # optional 
 
 ################################ data configs ################################
 
 MAX_LEAD_MONTHS = 6
 
-DATA_CONFIG_NAME = "seaice_plus_all_obs"
+DATA_CONFIG_NAME = "seaice_plus_auxiliary_obs_oldsplit"
 
 """
 data_split_settings should be a dict with keys split_by, train, val, and test
@@ -29,14 +29,12 @@ If split_by = "ensemble_member", the train/val/test values should be member_ids
 and you should specify the time range to use 
 """
 
-special_test_yrs = (pd.date_range("2014-01", "2014-12", freq="MS")).union(pd.date_range("2017-01", "2017-12", freq="MS"))
-
 DATA_SPLIT_SETTINGS = {
     "name": DATA_CONFIG_NAME, 
     "split_by": "time",
     "train": pd.date_range("1979-01", "2011-12", freq="MS"), 
-    "val": (pd.date_range("2012-01", "2019-12", freq="MS")).difference(special_test_yrs),
-    "test": (pd.date_range("2020-01", "2024-01", freq="MS")).union(special_test_yrs),
+    "val": (pd.date_range("2012-01", "2015-12", freq="MS")),
+    "test": (pd.date_range("2016-01", "2024-01", freq="MS")),
     "time_range": None,
     "member_ids": ["obs"]
 }
@@ -48,19 +46,19 @@ INPUT_CONFIG = {
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': False
     }, 
     'sst': {
-        'include': True, 'norm': True, 'land_mask': True, 'lag': 6, 
+        'include': False, 'norm': True, 'land_mask': True, 'lag': 6, 
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'geopotential': {
-        'include': True, 'norm': True, 'land_mask': False, 'lag': 6, 
+        'include': False, 'norm': True, 'land_mask': False, 'lag': 6, 
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'psl': {
-        'include': True, 'norm': True, 'land_mask': False, 'lag': 6, 
+        'include': False, 'norm': True, 'land_mask': False, 'lag': 6, 
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     't2m': {
-        'include': True, 'norm': True, 'land_mask': False, 'lag': 6, 
+        'include': False, 'norm': True, 'land_mask': False, 'lag': 6, 
         'divide_by_stdev': False, 'auxiliary': False, 'use_min_max': True
     }, 
     'cosine_of_init_month': {
@@ -87,17 +85,52 @@ MODEL_ARGS = {
 LOSS_FUNCTION = "MSE" 
 
 ############################# training configs ##############################
-LEARNING_RATE = 1e-3
-WEIGHT_DECAY = 5e-2
+LEARNING_RATE = 1e-4
+WEIGHT_DECAY = 1e-3
 BATCH_SIZE = 32
 NUM_EPOCHS = 50
 CHECKPOINT_INTERVAL = 10
 PATIENCE = 10
+
+# Optional learning-rate scheduler (default is constant LR)
+#
+# Supported:
+#   - None / "constant": keep LEARNING_RATE fixed
+#   - "cosine_with_warmup": linear warmup then cosine decay (step-based)
+#   - "cosine": cosine annealing without warmup (epoch-based)
+#   - "warm_restarts": cosine annealing with warm restarts (epoch-based)
+
 LR_SCHEDULER = "cosine"
 LR_SCHEDULER_ARGS = {
-    "t_max": 50,
-    "eta_min": 5e-5,
+    "t_max": 50,   # number of epochs for one cosine cycle
+    "eta_min": 0,  # absolute minimum LR
 }
+
+# Examples:
+#
+# 1) Warmup + cosine decay (step-based)
+# LR_SCHEDULER = "cosine_with_warmup"
+# LR_SCHEDULER_ARGS = {
+#     # set either warmup_steps or warmup_epochs
+#     "warmup_steps": 500,
+#     # "warmup_epochs": 1,
+#     "min_lr_ratio": 0.05,
+# }
+#
+# 2) Cosine annealing (no warmup, epoch-based)
+# LR_SCHEDULER = "cosine"
+# LR_SCHEDULER_ARGS = {
+#     "t_max": NUM_EPOCHS,   # number of epochs for one cosine cycle
+#     "eta_min": 0.0,        # absolute minimum LR
+# }
+#
+# 3) Cosine annealing with warm restarts (epoch-based)
+# LR_SCHEDULER = "warm_restarts"
+# LR_SCHEDULER_ARGS = {
+#     "t_0": 10,             # epochs until first restart
+#     "t_mult": 2,           # cycle length multiplier after each restart
+#     "eta_min": 0.0,
+# }
 
 ############################# evaluation configs #############################
 CHECKPOINT_TO_EVALUATE = "best"
