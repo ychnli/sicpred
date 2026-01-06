@@ -1,3 +1,4 @@
+from operator import lt
 import xarray as xr
 import numpy as np 
 import os
@@ -88,9 +89,90 @@ def calculate_rmse(pred_anom, truth_anom, aggregate=False):
     
     return rmse
 
-def calculate_iiee(pred_anom, truth_anom):
-    # TODO 
-    return 
+def reconstruct_sic_from_anomaly(anom, data_split_settings):
+    """
+    Reconstruct true sea ice concentration from quadratically detrended anomalies.
+    
+    The anomaly is computed as: anom = sic - monthly_mean - quadratic_trend
+    So we reconstruct: sic = anom + quadratic_trend + monthly_mean
+    
+    Parameters:
+    - anom (xr.DataArray): Sea ice concentration anomalies with dimensions 
+                           (start_prediction_month, member_id, lead_time, y, x) or similar
+    - data_split_settings (dict): Data split settings containing the name for finding saved files
+    
+    Returns:
+    - xr.DataArray: Reconstructed sea ice concentration values
+    """
+    norm_dir = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", data_split_settings["name"])
+    
+    # Load monthly means
+    monthly_mean = xr.open_dataset(os.path.join(norm_dir, "icefrac_mean.nc"))["icefrac"]
+    detrend_coeffs = xr.open_dataset(os.path.join(norm_dir, "icefrac_detrend_coeffs.nc"))["icefrac"]
+    
+    reconstructed = anom.copy()
+    
+    # For each lead_time, compute the target month and add back mean and trend
+    for lt in anom.lead_time.values:
+        # valid (verification) time for this lead
+        valid_time = anom.start_prediction_month + np.timedelta64(int(lt - 1), "M")
+        valid_month = valid_time.dt.month
+        
+        # time coordinate used in trend calculation
+        t = valid_time.dt.year + valid_time.dt.month / 12.0        
+
+        anom_lt = anom.sel(lead_time=lt)        
+        mean_lt = monthly_mean.sel(month=valid_month)
+        coeffs_lt = detrend_coeffs.sel(month=valid_month)
+        const = coeffs_lt.sel(coeff="const")
+        linear = coeffs_lt.sel(coeff="linear")
+        quadratic = coeffs_lt.sel(coeff="quadratic")
+
+        trend = const + linear * t + quadratic * (t ** 2)
+
+        reconstructed.loc[dict(lead_time=lt)] = anom_lt + mean_lt + trend
+    
+    return reconstructed
+
+
+def calculate_iiee(pred_anom, truth_anom, data_split_settings, sic_threshold=0.15, aggregate=False):
+    """
+    Calculate the Integrated Ice Edge Error (IIEE) between predictions and truth.
+    
+    IIEE is defined as the total area of disagreement between binary ice masks,
+    where ice is defined as SIC > threshold.
+    
+    Parameters:
+    - pred_anom (xr.DataArray): Predicted sea ice concentration anomalies
+    - truth_anom (xr.DataArray): True sea ice concentration anomalies
+    - data_split_settings (dict): Data split settings for reconstructing true SIC values
+    - sic_threshold (float): Threshold for defining ice presence (default 0.15)
+    - aggregate (bool): If True, aggregate to (month, lead_time) dimensions
+    
+    Returns:
+    - xr.DataArray: IIEE values (total area of disagreement in m^2)
+    """
+    # Reconstruct true SIC values from anomalies
+    pred_sic = reconstruct_sic_from_anomaly(pred_anom, data_split_settings)
+    truth_sic = reconstruct_sic_from_anomaly(truth_anom, data_split_settings)
+    
+    # Create binary ice masks (ice where SIC > threshold)
+    pred_ice_mask = pred_sic > sic_threshold
+    truth_ice_mask = truth_sic > sic_threshold
+    
+    # Calculate disagreement (XOR of the two masks)
+    disagreement = pred_ice_mask ^ truth_ice_mask
+    
+    # Get grid cell areas
+    area = REFERENCE_GRID.area
+    
+    # Calculate IIEE as total area of disagreement
+    iiee = (disagreement * area).sum(dim=("x", "y"))
+    
+    if aggregate:
+        iiee = aggregate_metric(iiee, dim=("x", "y"))
+    
+    return iiee
 
 
 def roll_metric(metric):
@@ -206,6 +288,14 @@ def main():
         rmse_agg = aggregate_metric(rmse, dim=("x","y"))
         util_shared.write_nc_file(rmse.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}.nc"), overwrite=args.overwrite)
         util_shared.write_nc_file(rmse_agg.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_agg.nc"), overwrite=args.overwrite)
+        print("done!\n")
+
+    if args.overwrite or not os.path.exists(os.path.join(save_dir, f"iiee{label}.nc")):
+        print("Computing IIEE...")
+        iiee = calculate_iiee(predictions, targets, config_dict["DATA_SPLIT_SETTINGS"])
+        iiee_agg = aggregate_metric(iiee, dim=("x","y"))
+        util_shared.write_nc_file(iiee.to_dataset(name="iiee"), os.path.join(save_dir, f"iiee{label}.nc"), overwrite=args.overwrite)
+        util_shared.write_nc_file(iiee_agg.to_dataset(name="iiee"), os.path.join(save_dir, f"iiee{label}_agg.nc"), overwrite=args.overwrite)
         print("done!\n")
 
     if args.baselines:
