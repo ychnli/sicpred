@@ -61,7 +61,7 @@ def calculate_acc(pred_anom, truth_anom, aggregate=False, dim=("x","y")):
     - xr.DataArray: ACC values with dimensions remaining after collapsing `dim`.
     """
 
-    acc = xr.cov(pred_anom, truth_anom, dim=dim) / (pred_anom.std(dim=dim) * truth_anom.std(dim=dim))
+    acc = xr.corr(pred_anom, truth_anom, dim=dim)
 
     if aggregate:
         acc = aggregate_metric(acc, dim)
@@ -301,6 +301,7 @@ def main():
     if args.baselines:
         print(f"Computing ACC and RMSE for persistence and climatology forecasts...")
         persistence_pred = baselines.anomaly_persistence(config_dict["DATA_SPLIT_SETTINGS"], os.path.join(base_dir, "baselines"), overwrite=args.overwrite)
+        persistence_pred = persistence_pred.where(ice_mask == 1)
         acc = calculate_acc(persistence_pred["predictions"], targets)
         acc_agg = aggregate_metric(acc, dim=("x","y"))
         util_shared.write_nc_file(acc.to_dataset(name="acc"), os.path.join(save_dir, f"acc{label}_persist.nc"), overwrite=args.overwrite)
@@ -312,6 +313,7 @@ def main():
         util_shared.write_nc_file(rmse_agg.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_agg_persist.nc"), overwrite=args.overwrite)
 
         climatology_pred = xr.zeros_like(targets)
+        climatology_pred = climatology_pred.where(ice_mask == 1)
         rmse = calculate_rmse(climatology_pred, targets)
         rmse_agg = aggregate_metric(rmse, dim=("x","y"))
         util_shared.write_nc_file(rmse.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_climatology.nc"), overwrite=args.overwrite)
