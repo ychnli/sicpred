@@ -3,6 +3,7 @@ import xarray as xr
 import numpy as np 
 import os
 import argparse
+import pandas as pd
 
 from src.utils import util_cesm
 from src.utils import util_shared
@@ -89,7 +90,7 @@ def calculate_rmse(pred_anom, truth_anom, aggregate=False):
     
     return rmse
 
-def reconstruct_sic_from_anomaly(anom, data_split_settings):
+def reconstruct_sic_from_anomaly(anom, data_split_settings, save_path=None):
     """
     Reconstruct true sea ice concentration from quadratically detrended anomalies.
     
@@ -104,38 +105,42 @@ def reconstruct_sic_from_anomaly(anom, data_split_settings):
     Returns:
     - xr.DataArray: Reconstructed sea ice concentration values
     """
+    if save_path is not None and os.path.exists(save_path):
+        return xr.open_dataset(save_path)["icefrac"]
+
     norm_dir = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", data_split_settings["name"])
     
     # Load monthly means
     monthly_mean = xr.open_dataset(os.path.join(norm_dir, "icefrac_mean.nc"))["icefrac"]
     detrend_coeffs = xr.open_dataset(os.path.join(norm_dir, "icefrac_detrend_coeffs.nc"))["icefrac"]
     
-    reconstructed = anom.copy()
+    def _add_months(dt64, months):
+        ts = pd.Timestamp(dt64)  # dt64 is numpy datetime64[ns]
+        return (ts + pd.DateOffset(months=int(months))).to_datetime64()
+
+    valid_time = xr.apply_ufunc(_add_months, anom["start_prediction_month"], (anom["lead_time"] - 1), vectorize=True)
+    valid_month = valid_time.dt.month
     
-    # For each lead_time, compute the target month and add back mean and trend
-    for lt in anom.lead_time.values:
-        # valid (verification) time for this lead
-        valid_time = anom.start_prediction_month + np.timedelta64(int(lt - 1), "M")
-        valid_month = valid_time.dt.month
-        
-        # time coordinate used in trend calculation
-        t = valid_time.dt.year + valid_time.dt.month / 12.0        
+    # time coordinate used in trend calculation
+    t = valid_time.dt.year + valid_time.dt.month / 12.0        
+  
+    mean_lt = monthly_mean.sel(month=valid_month)
+    coeffs_lt = detrend_coeffs.sel(month=valid_month)
+    const = coeffs_lt.sel(coeff="const")
+    linear = coeffs_lt.sel(coeff="linear")
+    quadratic = coeffs_lt.sel(coeff="quadratic")
 
-        anom_lt = anom.sel(lead_time=lt)        
-        mean_lt = monthly_mean.sel(month=valid_month)
-        coeffs_lt = detrend_coeffs.sel(month=valid_month)
-        const = coeffs_lt.sel(coeff="const")
-        linear = coeffs_lt.sel(coeff="linear")
-        quadratic = coeffs_lt.sel(coeff="quadratic")
+    # Broadcast t to (start_prediction_month, lead_time, y, x)
+    t_broadcast = t.broadcast_like(mean_lt)
 
-        trend = const + linear * t + quadratic * (t ** 2)
-
-        reconstructed.loc[dict(lead_time=lt)] = anom_lt + mean_lt + trend
-    
+    trend = const + linear * t_broadcast + quadratic * (t_broadcast ** 2)
+    reconstructed = anom + mean_lt + trend
+    if save_path is not None:
+        reconstructed.to_dataset(name='icefrac').to_netcdf(save_path)
     return reconstructed
 
 
-def calculate_iiee(pred_anom, truth_anom, data_split_settings, sic_threshold=0.15, aggregate=False):
+def calculate_iiee(pred_anom, truth_anom, data_split_settings, experiment_name, sic_threshold=0.15, save_abs=True):
     """
     Calculate the Integrated Ice Edge Error (IIEE) between predictions and truth.
     
@@ -152,9 +157,16 @@ def calculate_iiee(pred_anom, truth_anom, data_split_settings, sic_threshold=0.1
     Returns:
     - xr.DataArray: IIEE values (total area of disagreement in m^2)
     """
+
+    save_path = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, experiment_name, "diagnostics/")
+
     # Reconstruct true SIC values from anomalies
-    pred_sic = reconstruct_sic_from_anomaly(pred_anom, data_split_settings)
-    truth_sic = reconstruct_sic_from_anomaly(truth_anom, data_split_settings)
+    if save_abs:
+        save_name_pred = os.path.join(save_path, "pred_abs.nc")
+    else:
+        save_name_pred = None
+    pred_sic = reconstruct_sic_from_anomaly(pred_anom, data_split_settings, save_name_pred)
+    truth_sic = reconstruct_sic_from_anomaly(truth_anom, data_split_settings, os.path.join(save_path, "truth_abs.nc"))
     
     # Create binary ice masks (ice where SIC > threshold)
     pred_ice_mask = pred_sic > sic_threshold
@@ -168,10 +180,7 @@ def calculate_iiee(pred_anom, truth_anom, data_split_settings, sic_threshold=0.1
     
     # Calculate IIEE as total area of disagreement
     iiee = (disagreement * area).sum(dim=("x", "y"))
-    
-    if aggregate:
-        iiee = aggregate_metric(iiee, dim=("x", "y"))
-    
+        
     return iiee
 
 
@@ -228,6 +237,8 @@ def main():
     parser.add_argument("--overwrite", action="store_true", help="If set, overwrite existing output files.")
     parser.add_argument("--baselines", action="store_true", help="If set, calculates persistence and climatology baselines too.")
     parser.add_argument("--ensemble-mean", action="store_true", help="If set, computes the ensemble mean prediction and calculates the diagnostics for it.")
+    parser.add_argument("--predictions-path", type=str, default=None, help='Set this if you want to evaluate a checkpoint that is not the one specified in the config file')
+    parser.add_argument("--label", type=str, default=None, help='Diagnostics will be saved as {diag}{label}_...')
     parser.add_argument("--permute-var", type=str, default=None, help="If set, permute the specified variable before computing diagnostics.")
     args = parser.parse_args()
 
@@ -235,11 +246,13 @@ def main():
     config_dict = util_shared.load_globals(config)
     base_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config_dict["EXPERIMENT_NAME"])
     save_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config_dict["EXPERIMENT_NAME"], "diagnostics")
+    predictions_path = args.predictions_path
     os.makedirs(save_dir, exist_ok=True)
 
     targets = load_targets(config_dict, split="test")
 
     if args.permute_var is not None:
+        # TODO: remove the permute-var flag and merge this logic into using just predictions-path and label
         predictions_fp = os.path.join(
             config_cesm.PREDICTIONS_DIRECTORY, 
             config_dict["EXPERIMENT_NAME"], 
@@ -251,8 +264,16 @@ def main():
 
         label = f"_permute_{args.permute_var}"
     else:
-        predictions = load_model_predictions(config_dict)
-        label = ""
+        if predictions_path is not None:
+            assert os.path.exists(predictions_path)
+            predictions = xr.open_dataset(predictions_path)["predictions"]
+        else:
+            predictions = load_model_predictions(config_dict)
+        
+        if args.label is not None:
+            label = args.label
+        else:
+            label = ""
 
     if args.ensemble_mean:
         # add an ensemble mean prediction with nn_member_id label -1
@@ -292,14 +313,14 @@ def main():
 
     if args.overwrite or not os.path.exists(os.path.join(save_dir, f"iiee{label}.nc")):
         print("Computing IIEE...")
-        iiee = calculate_iiee(predictions, targets, config_dict["DATA_SPLIT_SETTINGS"])
+        iiee = calculate_iiee(predictions, targets, config_dict["DATA_SPLIT_SETTINGS"], config_dict["EXPERIMENT_NAME"])
         iiee_agg = aggregate_metric(iiee, dim=("x","y"))
         util_shared.write_nc_file(iiee.to_dataset(name="iiee"), os.path.join(save_dir, f"iiee{label}.nc"), overwrite=args.overwrite)
         util_shared.write_nc_file(iiee_agg.to_dataset(name="iiee"), os.path.join(save_dir, f"iiee{label}_agg.nc"), overwrite=args.overwrite)
         print("done!\n")
 
     if args.baselines:
-        print(f"Computing ACC and RMSE for persistence and climatology forecasts...")
+        print(f"Computing ACC, RMSE, and IIEE for persistence and climatology forecasts...")
         persistence_pred = baselines.anomaly_persistence(config_dict["DATA_SPLIT_SETTINGS"], os.path.join(base_dir, "baselines"), overwrite=args.overwrite)
         persistence_pred = persistence_pred.where(ice_mask == 1)
         acc = calculate_acc(persistence_pred["predictions"], targets)
@@ -312,12 +333,23 @@ def main():
         util_shared.write_nc_file(rmse.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_persist.nc"), overwrite=args.overwrite)
         util_shared.write_nc_file(rmse_agg.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_agg_persist.nc"), overwrite=args.overwrite)
 
+        iiee = calculate_iiee(persistence_pred["predictions"], targets, config_dict["DATA_SPLIT_SETTINGS"], config_dict["EXPERIMENT_NAME"], save_abs=False)
+        iiee_agg = aggregate_metric(iiee, dim=("x","y"))
+        util_shared.write_nc_file(iiee.to_dataset(name="iiee"), os.path.join(save_dir, f"iiee{label}_persist.nc"), overwrite=args.overwrite)
+        util_shared.write_nc_file(iiee_agg.to_dataset(name="iiee"), os.path.join(save_dir, f"iiee{label}_agg_persist.nc"), overwrite=args.overwrite)
+
         climatology_pred = xr.zeros_like(targets)
         climatology_pred = climatology_pred.where(ice_mask == 1)
         rmse = calculate_rmse(climatology_pred, targets)
         rmse_agg = aggregate_metric(rmse, dim=("x","y"))
         util_shared.write_nc_file(rmse.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_climatology.nc"), overwrite=args.overwrite)
         util_shared.write_nc_file(rmse_agg.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_agg_climatology.nc"), overwrite=args.overwrite)
+
+        iiee = calculate_iiee(climatology_pred, targets, config_dict["DATA_SPLIT_SETTINGS"], config_dict["EXPERIMENT_NAME"], save_abs=False)
+        iiee_agg = aggregate_metric(iiee, dim=("x","y"))
+        util_shared.write_nc_file(iiee.to_dataset(name="iiee"), os.path.join(save_dir, f"iiee{label}_climatology.nc"), overwrite=args.overwrite)
+        util_shared.write_nc_file(iiee_agg.to_dataset(name="iiee"), os.path.join(save_dir, f"iiee{label}_agg_climatology.nc"), overwrite=args.overwrite)
+
         print("done!\n")
 
 

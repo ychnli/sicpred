@@ -138,6 +138,15 @@ def main():
     ds_a = xr.load_dataset(os.path.join(config_cesm.PREDICTIONS_DIRECTORY, args.config_a, "diagnostics", f"{args.metric}.nc"))
     ds_b = xr.load_dataset(os.path.join(config_cesm.PREDICTIONS_DIRECTORY, args.config_b, "diagnostics", f"{args.metric}.nc"))
 
+    # the -1 nn_member_id is used to denote the ensemble mean prediction
+    # if the predictions has this member id, drop it. We only want to bootstrap
+    # over individual ensemble members, not the ensemble mean
+    if "nn_member_id" in ds_a.dims:
+        ds_a = ds_a.where(ds_a["nn_member_id"] == -1, drop=True)
+    if "nn_member_id" in ds_b.dims:
+        ds_b = ds_b.where(ds_b["nn_member_id"] == -1, drop=True)
+
+
     if args.transform == "fisher_z":
         ds_a[args.metric] = fisher_z(ds_a[args.metric])
         ds_b[args.metric] = fisher_z(ds_b[args.metric])

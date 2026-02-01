@@ -36,7 +36,7 @@ DATA_SPLIT_SETTINGS = {
     "split_by": "time",
     "train": pd.date_range("1979-01", "2011-12", freq="MS"), 
     "val": (pd.date_range("2012-01", "2019-12", freq="MS")).difference(special_test_yrs),
-    "test": (pd.date_range("2020-01", "2024-01", freq="MS")).union(special_test_yrs),
+    "test": (pd.date_range("2020-01", "2024-12", freq="MS")).union(special_test_yrs),
     "time_range": None,
     "member_ids": ["obs"]
 }

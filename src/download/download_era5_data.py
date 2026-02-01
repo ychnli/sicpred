@@ -9,10 +9,9 @@ import xarray as xr
 import cdsapi
 import os
 import argparse
-import config
+from src import config_cesm
 
-# Change as needed
-save_directory = os.path.join(config.DATA_DIRECTORY, "ERA5")
+save_directory = os.path.join(config_cesm.DATA_DIRECTORY, "ERA5")
 
 # Get the variable name to download 
 parser = argparse.ArgumentParser()
@@ -23,22 +22,24 @@ variable = args.var
 
 #######################################################################
 
-years = ['1978', '1979', '1980',
-        '1981', '1982', '1983',
-        '1984', '1985', '1986',
-        '1987', '1988', '1989',
-        '1990', '1991', '1992',
-        '1993', '1994', '1995',
-        '1996', '1997', '1998',
-        '1999', '2000', '2001',
-        '2002', '2003', '2004',
-        '2005', '2006', '2007',
-        '2008', '2009', '2010',
-        '2011', '2012', '2013',
-        '2014', '2015', '2016',
-        '2017', '2018', '2019',
-        '2020', '2021', '2022',
-        '2023', '2024']
+# years = ['1978', '1979', '1980',
+#         '1981', '1982', '1983',
+#         '1984', '1985', '1986',
+#         '1987', '1988', '1989',
+#         '1990', '1991', '1992',
+#         '1993', '1994', '1995',
+#         '1996', '1997', '1998',
+#         '1999', '2000', '2001',
+#         '2002', '2003', '2004',
+#         '2005', '2006', '2007',
+#         '2008', '2009', '2010',
+#         '2011', '2012', '2013',
+#         '2014', '2015', '2016',
+#         '2017', '2018', '2019',
+#         '2020', '2021', '2022',
+#         '2023', '2024']
+
+years = ['2024', '2025']
 
 months = ['01', '02', '03',
         '04', '05', '06',
@@ -121,8 +122,8 @@ cds_client = cdsapi.Client()
 
 plevel = variables_dict[variable]["plevel"]
 if plevel is not None:
-    save_path = os.path.join(save_directory, f'{variable}_{plevel}hPa.nc')
+    save_path = os.path.join(save_directory, f'{variable}_{plevel}hPa_2425.nc')
 else: 
-    save_path = os.path.join(save_directory, f'{variable}.nc')
+    save_path = os.path.join(save_directory, f'{variable}_2425.nc')
 
 download_era5_variable(variable, save_path, plevel=variables_dict[variable]["plevel"])
