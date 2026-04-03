@@ -1,3 +1,10 @@
+###################################################################################
+# This script runs the diagnostics and bootstrap confidence intervals for the 
+# variable importance experiment (exp1)
+# 
+# Results are saved in ANALYSIS_RESULTS_DIRECTORY which is set in config_cesm.py
+###################################################################################
+
 python -m src.models.diagnostics --config src/experiment_configs/exp1_inputs/input2.py --overwrite
 python -m src.models.diagnostics --config src/experiment_configs/exp1_inputs/input3a.py --overwrite
 python -m src.models.diagnostics --config src/experiment_configs/exp1_inputs/input3b.py --overwrite
