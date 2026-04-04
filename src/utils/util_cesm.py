@@ -10,11 +10,6 @@ from src.utils.util_shared import write_nc_file
 
 ALL_VAR_NAMES = config.ALL_VAR_NAMES
 LAND_MASK_PATH = os.path.join(config.DATA_DIRECTORY, "cesm_data", "grids", "land_mask.nc")
-
-def check_valid_data_split_settings(data_split_settings):
-    ### TODO: check that data_split_settings is valid 
-
-    return None
     
 
 def find_downloaded_vars():
