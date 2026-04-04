@@ -6,7 +6,7 @@ import pandas as pd
 from src.config_cesm import AVAILABLE_CESM_MEMBERS
 
 ################################ description ################################
-EXPERIMENT_NAME = "obs_input2_ensemble"
+EXPERIMENT_NAME = "obs_input2_oldsplit_ft"
 NOTES = "Inputs: same as input2. ERA5 data"
 DATE = "" # optional 
 
@@ -14,7 +14,7 @@ DATE = "" # optional
 
 MAX_LEAD_MONTHS = 6
 
-DATA_CONFIG_NAME = "seaice_plus_auxiliary_obs"
+DATA_CONFIG_NAME = "seaice_plus_auxiliary_obs_oldsplit"
 
 """
 data_split_settings should be a dict with keys split_by, train, val, and test
@@ -29,14 +29,12 @@ If split_by = "ensemble_member", the train/val/test values should be member_ids
 and you should specify the time range to use 
 """
 
-special_test_yrs = (pd.date_range("2014-01", "2014-12", freq="MS")).union(pd.date_range("2017-01", "2017-12", freq="MS"))
-
 DATA_SPLIT_SETTINGS = {
     "name": DATA_CONFIG_NAME, 
     "split_by": "time",
     "train": pd.date_range("1979-01", "2011-12", freq="MS"), 
-    "val": (pd.date_range("2012-01", "2019-12", freq="MS")).difference(special_test_yrs),
-    "test": (pd.date_range("2020-01", "2024-12", freq="MS")).union(special_test_yrs),
+    "val": (pd.date_range("2012-01", "2015-12", freq="MS")),
+    "test": (pd.date_range("2016-01", "2024-01", freq="MS")),
     "time_range": None,
     "member_ids": ["obs"]
 }
@@ -87,8 +85,8 @@ MODEL_ARGS = {
 LOSS_FUNCTION = "MSE" 
 
 ############################# training configs ##############################
-LEARNING_RATE = 1e-3
-WEIGHT_DECAY = 5e-2
+LEARNING_RATE = 1e-4
+WEIGHT_DECAY = 1e-3
 BATCH_SIZE = 32
 NUM_EPOCHS = 50
 CHECKPOINT_INTERVAL = 10
@@ -105,7 +103,7 @@ PATIENCE = 10
 LR_SCHEDULER = "cosine"
 LR_SCHEDULER_ARGS = {
     "t_max": 50,   # number of epochs for one cosine cycle
-    "eta_min": 5e-5,        # absolute minimum LR
+    "eta_min": 0,  # absolute minimum LR
 }
 
 # Examples:

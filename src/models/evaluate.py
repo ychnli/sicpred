@@ -34,17 +34,26 @@ def nn_ens_members(config):
 
 def main():
     parser = argparse.ArgumentParser(description="Train a model with specified config.")
-    parser.add_argument("--config", type=str, required=True, help="Path to the configuration file (e.g., config.py)")
+    parser.add_argument("--config", type=str, required=True, help="Path to the configuration file of the model (e.g., config.py)")
     parser.add_argument("--device", type=str, help="cuda or cpu")
     parser.add_argument("--split", type=str, default="test")
     parser.add_argument("--overwrite", action="store_true", help="If set, overwrite existing output files.")
+    parser.add_argument("--zero-shot", type=str, default=None, help="Path to another configuration file for" 
+        "a dataset that the model has not seen to evaluate the model on (e.g., evaluating a model pretrained"
+        "on CESM to zero-shot predict obs)")
     args = parser.parse_args()
     
     # Load configurations
     config = load_config(args.config)
+    if args.zero_shot is not None:
+        # this loads the evaluation dataset according to the zero shot config file
+        config_zs = load_config(args.zero_shot)
+        data_split_settings = config_zs.DATA_SPLIT_SETTINGS
+    else:
+        data_split_settings = config.DATA_SPLIT_SETTINGS
 
-    test_dataset = CESM_Dataset(args.split, config.DATA_SPLIT_SETTINGS)
-    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=2)
+    test_dataset = CESM_Dataset(args.split, data_split_settings)
+    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
     if args.device in ["cuda", "cpu"]: 
         device = torch.device(args.device) 
     else: 
@@ -62,18 +71,18 @@ def main():
         raise NotImplementedError(f"Model {config.MODEL} not implemented.")
 
     # Initialize an empty dataset 
-    if config.DATA_SPLIT_SETTINGS["split_by"] == "ensemble_member":
+    if data_split_settings["split_by"] == "ensemble_member":
         if args.split == 'all':
-            ensemble_members = [*config.DATA_SPLIT_SETTINGS["train"], *config.DATA_SPLIT_SETTINGS["val"], *config.DATA_SPLIT_SETTINGS["test"]]
+            ensemble_members = [*data_split_settings["train"], *data_split_settings["val"], *data_split_settings["test"]]
         else:
-            ensemble_members = config.DATA_SPLIT_SETTINGS["test"]
-        time_coords = config.DATA_SPLIT_SETTINGS["time_range"]
-    elif config.DATA_SPLIT_SETTINGS["split_by"] == "time":
-        ensemble_members = config.DATA_SPLIT_SETTINGS["member_ids"]
+            ensemble_members = data_split_settings["test"]
+        time_coords = data_split_settings["time_range"]
+    elif data_split_settings["split_by"] == "time":
+        ensemble_members = data_split_settings["member_ids"]
         if args.split == 'all':
-            time_coords = config.DATA_SPLIT_SETTINGS["train"].union(config.DATA_SPLIT_SETTINGS["val"]).union(config.DATA_SPLIT_SETTINGS["test"])
+            time_coords = data_split_settings["train"].union(data_split_settings["val"]).union(data_split_settings["test"])
         else:
-            time_coords = config.DATA_SPLIT_SETTINGS["test"]
+            time_coords = data_split_settings["test"]
     num_members = len(ensemble_members)
     channels, x_dim, y_dim = config.MAX_LEAD_MONTHS, 80, 80
     reference_grid = util_cesm.generate_sps_grid()
@@ -133,9 +142,13 @@ def main():
                 ds["predictions"][time_idx, member_idx, nn_member_idx, :, :, :] = predictions
 
     # Save the Dataset as NetCDF
-    output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config.EXPERIMENT_NAME)
+    if args.zero_shot is not None:
+        output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config_zs.EXPERIMENT_NAME)
+        output_path = os.path.join(output_dir, f"{config.EXPERIMENT_NAME}_{config.MODEL}_zeroshot_predictions.nc")
+    else:
+        output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config.EXPERIMENT_NAME)
+        output_path = os.path.join(output_dir, f"{config.MODEL}_{config.CHECKPOINT_TO_EVALUATE}_predictions.nc")
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"{config.MODEL}_{config.CHECKPOINT_TO_EVALUATE}_predictions.nc")
     util_shared.write_nc_file(ds, output_path, overwrite=args.overwrite)
     print(f"Predictions saved to {output_path}")
 

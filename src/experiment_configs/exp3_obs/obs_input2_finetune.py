@@ -6,7 +6,7 @@ import pandas as pd
 from src.config_cesm import AVAILABLE_CESM_MEMBERS
 
 ################################ description ################################
-EXPERIMENT_NAME = "obs_input2_ensemble"
+EXPERIMENT_NAME = "obs_input2_finetune"
 NOTES = "Inputs: same as input2. ERA5 data"
 DATE = "" # optional 
 
@@ -87,8 +87,8 @@ MODEL_ARGS = {
 LOSS_FUNCTION = "MSE" 
 
 ############################# training configs ##############################
-LEARNING_RATE = 1e-3
-WEIGHT_DECAY = 5e-2
+LEARNING_RATE = 1e-4
+WEIGHT_DECAY = 1e-3
 BATCH_SIZE = 32
 NUM_EPOCHS = 50
 CHECKPOINT_INTERVAL = 10
@@ -105,7 +105,7 @@ PATIENCE = 10
 LR_SCHEDULER = "cosine"
 LR_SCHEDULER_ARGS = {
     "t_max": 50,   # number of epochs for one cosine cycle
-    "eta_min": 5e-5,        # absolute minimum LR
+    "eta_min": 0,  # absolute minimum LR
 }
 
 # Examples:

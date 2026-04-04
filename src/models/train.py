@@ -138,10 +138,23 @@ def get_best_checkpoint(checkpoint_dir, member_id=None):
 def main():
     parser = argparse.ArgumentParser(description="Train a model with specified config.")
     parser.add_argument("--config", type=str, required=True, help="Path to the configuration file (e.g., config.py)")
+    parser.add_argument(
+        "--pretrained",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to a pretrained checkpoint (.pth). "
+            "If provided, the model weights will be loaded before training starts. "
+            "Optimizer/scheduler will be initialized from the config (i.e., finetuning)."
+        ),
+    )
     parser.add_argument("--members", type=int, default=1, help="Number of ensemble members to train (default = 1)")
     parser.add_argument("--start_ens_id", type=int, default=0, help="Base seed (default = 0)")
     parser.add_argument("--resume", type=int, default=0, help="Number of additional epochs to resume training from latest checkpoint.")
     args = parser.parse_args()
+
+    if args.pretrained is not None and args.resume > 0:
+        raise ValueError("Use either --pretrained (finetune) or --resume (resume), not both.")
     
     # Load configurations
     config = load_config(args.config)
@@ -178,6 +191,23 @@ def main():
             model = SICNet(T=in_channels, T_pred=out_channels, base_channels=32).to(device)
         else: 
             raise NotImplementedError(f"Model {config.MODEL} not implemented.")
+
+        # Optional: load pretrained weights for finetuning.
+        # This expects a checkpoint format produced by this script (a dict with
+        # model_state_dict), but also supports a plain torch state_dict.
+        if args.pretrained is not None:
+            if not os.path.exists(args.pretrained):
+                raise FileNotFoundError(f"Pretrained checkpoint not found: {args.pretrained}")
+
+            pretrained_ckpt = torch.load(args.pretrained, map_location=device)
+            if isinstance(pretrained_ckpt, dict) and "model_state_dict" in pretrained_ckpt:
+                state_dict = pretrained_ckpt["model_state_dict"]
+            else:
+                # assume it is a raw state_dict
+                state_dict = pretrained_ckpt
+
+            model.load_state_dict(state_dict)
+            print(f"Loaded pretrained weights from: {args.pretrained}")
         
         # initialize optimizer
         optimizer = build_optimizer(config, model)

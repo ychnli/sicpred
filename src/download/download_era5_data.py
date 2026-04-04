@@ -9,10 +9,9 @@ import xarray as xr
 import cdsapi
 import os
 import argparse
-import config
+from src import config_cesm
 
-# Change as needed
-save_directory = os.path.join(config.DATA_DIRECTORY, "ERA5")
+save_directory = os.path.join(config_cesm.DATA_DIRECTORY, "ERA5")
 
 # Get the variable name to download 
 parser = argparse.ArgumentParser()
@@ -38,7 +37,7 @@ years = ['1978', '1979', '1980',
         '2014', '2015', '2016',
         '2017', '2018', '2019',
         '2020', '2021', '2022',
-        '2023', '2024']
+        '2023', '2024', '2025']
 
 months = ['01', '02', '03',
         '04', '05', '06',
@@ -121,8 +120,8 @@ cds_client = cdsapi.Client()
 
 plevel = variables_dict[variable]["plevel"]
 if plevel is not None:
-    save_path = os.path.join(save_directory, f'{variable}_{plevel}hPa.nc')
+    save_path = os.path.join(save_directory, f'{variable}_{plevel}hPa_2425.nc')
 else: 
-    save_path = os.path.join(save_directory, f'{variable}.nc')
+    save_path = os.path.join(save_directory, f'{variable}_2425.nc')
 
 download_era5_variable(variable, save_path, plevel=variables_dict[variable]["plevel"])
