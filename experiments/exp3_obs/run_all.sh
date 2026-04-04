@@ -8,4 +8,5 @@ set -e
 
 bash experiments/exp3_obs/preprocess.sh
 bash experiments/exp3_obs/train.sh
+bash experiments/exp3_obs/evaluate.sh
 bash experiments/exp3_obs/diagnostics.sh

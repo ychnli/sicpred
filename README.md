@@ -16,10 +16,12 @@ python -m src.download.download_cesm_data
 
 Note that this script also supports parallel downloads via an array job if you are running on HPC. In total, downloading and regridding CESM data can take up to a few hours; the final data is ~6.0 GB.
 
-**Observational data**: the regridded ERA5 sea ice concentration used in the finetuning experiment can be found in the Zenodo [link]. 
+**Observational data**: the regridded ERA5 sea ice concentration used in the finetuning experiment can be found in the Zenodo. 
 
 ## 3) Configuring the repository
+Before running any experiments, you need to first create and set the paths used for saving model checkpoints and results in `src/config_cesm.py`. 
 
 ## 4) Running the experiments
 
 ## 5) Reproducing figures
+The figures can be reproduced by running the notebooks `exp1_figures.ipynb`, `exp2_figures.ipynb`, `exp3_figures.ipynb`, and `supp_figures.ipynb`. 

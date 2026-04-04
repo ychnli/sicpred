@@ -8,5 +8,6 @@ set -e
 
 bash experiments/exp1_inputs/preprocess.sh
 bash experiments/exp1_inputs/train.sh
+bash experiments/exp1_inputs/evaluate.sh
 bash experiments/exp1_inputs/diagnostics.sh
 bash experiments/exp1_inputs/permute_and_predict.sh
