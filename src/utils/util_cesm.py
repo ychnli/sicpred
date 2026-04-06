@@ -10,46 +10,6 @@ from src.utils.util_shared import write_nc_file
 
 ALL_VAR_NAMES = config.ALL_VAR_NAMES
 LAND_MASK_PATH = os.path.join(config.DATA_DIRECTORY, "cesm_data", "grids", "land_mask.nc")
-    
-
-def find_downloaded_vars():
-    """
-    Finds and verifies the downloaded variables and their ensemble members.
-        
-    Raises:
-        ValueError: If member IDs do not match across variables at any index.
-
-    """
-
-    member_ids = np.empty((len(ALL_VAR_NAMES), 100), dtype='object')
-    n_members = []
-
-    for i,variable in enumerate(ALL_VAR_NAMES):
-        directory = os.path.join(config.RAW_DATA_DIRECTORY, variable)
-        
-        if os.path.exists(directory):
-            files = sorted(os.listdir(directory))
-
-            if len(files) == 0: continue
-
-            for j,file_name in enumerate(files):
-                file_path = os.path.join(directory, file_name)
-                ds = xr.open_dataset(file_path)
-                member_ids[i,j] = ds["member_id"].values
-
-            print(f"Found {len(files)} ensemble members for {variable}")
-            n_members.append(len(files))
-        
-    # check if member_ids match across variables
-    min_members = np.min(n_members)
-    for j in range(min_members):
-        if not np.all(np.logical_or(member_ids[:, j] == member_ids[0, j], member_ids[:, j] == None)):
-            print(member_ids[:, j])
-            raise ValueError(f"Member IDs do not match across variables at index {j}")
-
-    print("All member IDs match across variables")
-    
-    return min_members
 
 
 def normalize(x, m, s):
@@ -453,7 +413,7 @@ def save_targets_files(input_config, target_config, save_path, max_lead_months, 
     """
 
     if not target_config["predict_anom"]:
-        ds = xr.open_dataset(os.path.join(config.RAW_DATA_DIRECTORY, "icefrac/icefrac_combined.nc"))
+        ds = xr.open_dataset(os.path.join(config.DATA_DIRECTORY, "cesm_data/icefrac/icefrac_combined.nc"))
         da = ds["icefrac"] 
     else:
         input_da_dict = load_inputs_data_da_dict(input_config, data_split_settings)
@@ -562,7 +522,7 @@ def save_icefrac_land_mask():
 
     if os.path.exists(save_path): return 
 
-    ds = xr.open_dataset(f"{config.DATA_DIRECTORY}/cesm_data/icefrac/icefrac_combined.nc")
+    ds = xr.open_dataset(os.path.join(config.DATA_DIRECTORY, "cesm_data/icefrac/icefrac_combined.nc"))
 
     # we'll use 5 ensemble members to calculate the region where icefrac is always 0
     icefrac_zero_mask = ds["icefrac"].isel(member_id=slice(0,5)).mean(("member_id", "time")) == 0
