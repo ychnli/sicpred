@@ -427,6 +427,13 @@ dependencies:
       - cartopy==0.24.1
       - cdsapi==0.7.7
       - cftime==1.6.4.post1
+      - fastprogress==1.0.3
+      - intake==0.7.0
+      - intake-esm==2024.2.6
+      - numcodecs==0.13.1
+      - pytest==8.3.4
+      - s3fs==2024.6.1
+      - zarr==2.18.3
       - docker-pycreds==0.4.0
       - ecmwf-datastores-client==0.4.1
       - frozenlist==1.5.0

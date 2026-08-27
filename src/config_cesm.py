@@ -6,14 +6,14 @@ DATA_DIRECTORY = '/oak/stanford/groups/earlew/yuchen'
 
 PROCESSED_DATA_DIRECTORY = '/scratch/users/yucli/cesm_data_processed'
 
-MODEL_DIRECTORY = '/home/users/yucli/sicpred_models'
+MODEL_DIRECTORY = '/oak/stanford/groups/earlew/yuchen/sicpred/sicpred_models'
 
 PREDICTIONS_DIRECTORY = '/scratch/users/yucli/sicpred_model_predictions'
 
 ANALYSIS_RESULTS_DIRECTORY = '/oak/stanford/groups/earlew/yuchen/sicpred/analysis_results'
 
 # all renamed variables 
-ALL_VAR_NAMES = ["icefrac", "sst", "geopotential", "psl", "t2m"]
+ALL_VAR_NAMES = ["icefrac", "sst", "ohc200", "geopotential", "psl", "t2m"]
 
 AVAILABLE_CESM_MEMBERS = [
     'r10i1181p1f1', 'r10i1231p1f1', 'r10i1251p1f1', 'r10i1281p1f1',
