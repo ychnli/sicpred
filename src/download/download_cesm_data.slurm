@@ -9,12 +9,12 @@
 
 #SBATCH --job-name=cesm_download
 #SBATCH --partition=serc
-#SBATCH --array=1-16
+#SBATCH --array=1-10
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=16G
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 #SBATCH --output=logs/cesm_download_logs/%x_%A_%a.out
 #SBATCH --error=logs/cesm_download_logs/%x_%A_%a.err
 #SBATCH --mail-type=END,FAIL

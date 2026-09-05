@@ -2,7 +2,7 @@
 Global configurations for the CESM dataset 
 """
 
-DATA_DIRECTORY = '/oak/stanford/groups/earlew/yuchen'
+DATA_DIRECTORY = '/scratch/users/yucli'
 
 PROCESSED_DATA_DIRECTORY = '/scratch/users/yucli/cesm_data_processed'
 
@@ -13,7 +13,16 @@ PREDICTIONS_DIRECTORY = '/scratch/users/yucli/sicpred_model_predictions'
 ANALYSIS_RESULTS_DIRECTORY = '/oak/stanford/groups/earlew/yuchen/sicpred/analysis_results'
 
 # all renamed variables 
-ALL_VAR_NAMES = ["icefrac", "sst", "ohc200", "geopotential", "psl", "t2m"]
+ALL_VAR_NAMES = [
+    "icefrac", 
+    "icethick",
+    "sst", 
+    "ohc200", 
+    "geopotential", 
+    "z500",
+    "z50", 
+    "t2m"
+]
 
 AVAILABLE_CESM_MEMBERS = [
     'r10i1181p1f1', 'r10i1231p1f1', 'r10i1251p1f1', 'r10i1281p1f1',

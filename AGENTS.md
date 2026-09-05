@@ -23,6 +23,16 @@ Use four-space indentation and standard Python conventions: `snake_case` for mod
 
 No automated test framework or coverage threshold is configured. For model or preprocessing changes, run `python -m compileall src` plus the smallest relevant experiment stage (`preprocess.sh`, `evaluate.sh`, or `diagnostics.sh`). If adding tests, use `pytest`, place them in `tests/`, and name files `test_<module>.py`. Document any required datasets, checkpoints, GPU, or long runtime in the pull request.
 
+## Sherlock Patch Fallback
+
+On the Sherlock cluster, the sandboxed patch helper can occasionally fail with a namespace-exhaustion error. Confirm that the session is on Sherlock with:
+
+```bash
+[[ "${SLURM_CLUSTER_NAME:-}" == "sherlock" ]] || hostname -f | grep -q "\.sherlock\.stanford\.edu$"
+```
+
+If that command succeeds and `apply_patch` is unavailable, use this minimal fallback for a targeted edit: copy the current file to `/tmp`, edit only the copy, inspect the generated unified diff, run `git apply --check` on that diff, then apply it with `git apply`. Always diff against the current working-tree file (not `HEAD`) so existing user edits are preserved. Do not use this fallback outside Sherlock or for broad/mechanical rewrites.
+
 ## Configuration, Commits, and Pull Requests
 
 Set machine-specific data, model, prediction, and analysis paths in `src/config_cesm.py`; never commit credentials or large generated artifacts. Follow the existing concise, imperative commit style, for example `Add script for bootstrapping confidence intervals`. Pull requests should state the experiment affected, commands run, configuration assumptions, and expected scientific impact. Link relevant issues and include regenerated plots when results or figure notebooks change.

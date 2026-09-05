@@ -21,9 +21,9 @@ The sea-ice thickness catalog name is lowercase `hi`, not `HI`. The catalog list
 
 ## Value-based selections used by the downloader
 
-- All outputs use latitude bounds `(-90, -30)` in degrees north.
-- Atmospheric data have a one-dimensional monotonic `lat` coordinate and can be selected directly with `.sel(lat=slice(-90, -30))`.
-- Ocean and ice data do not carry latitude coordinates in their variable stores. The downloader applies the bounds to the static two-dimensional `TLAT` field, keeps the rectangular row span containing matching cells, masks cells outside the requested bounds, and attaches `TLAT`/`TLONG` as `lat`/`lon` coordinates. For 30 degrees S, the matching native rows are 0 through 92, equivalent to the previous positional `slice(0, 93)`.
+- All outputs use latitude bounds `(-90, -35)` in degrees north.
+- Atmospheric data have a one-dimensional monotonic `lat` coordinate and can be selected directly with `.sel(lat=slice(-90, -35))`.
+- Ocean and ice data do not carry latitude coordinates in their variable stores. The downloader applies the bounds to the static two-dimensional `TLAT` field, keeps the rectangular row span containing matching cells, masks cells outside the requested bounds, and attaches `TLAT`/`TLONG` as `lat`/`lon` coordinates.
 - The requested atmospheric 500 hPa level is selected by `lev=500` with `method="nearest"`. The nearest stored hybrid midpoint is 524.6871747 hPa at index 20, preserving the previous `p_index=20` behavior. This is a nominal hybrid level, not pressure interpolation to an exact 500 hPa surface.
 - SST uses the `z_t=500` cm midpoint. This is the first ocean layer, bounded by 0 and 1000 cm (0-10 m), preserving the previous `p_index=0` behavior.
 

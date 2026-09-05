@@ -22,7 +22,7 @@ CATALOG_URL = (
     "https://raw.githubusercontent.com/NCAR/cesm2-le-aws/main/"
     "intake-catalogs/aws-cesm2-le.json"
 )
-INPUT_EXPERIMENTS_SUBSET = config.AVAILABLE_CESM_MEMBERS[:14]
+INPUT_EXPERIMENTS_SUBSET = config.AVAILABLE_CESM_MEMBERS[:40]
 
 CATALOG = None
 CESM_OCEAN_GRID = None
@@ -105,13 +105,23 @@ def process_depth_weighted_mean(raw_dataset, output_name, settings, ocean_grid):
 # Keys are output/save names. Raw catalog variables are declared explicitly so
 # multiple outputs can share a raw download (TEMP is shared by sst and ohc200).
 CESM_VAR_ARGS = {
+    # Ice variables
     "icefrac": {
         "raw_variables": ("ICEFRAC",),
         "processor": process_direct,
-        "latitude_bounds": (-90.0, -30.0),
+        "latitude_bounds": (-90.0, -35.0),
         "long_name": "Sea ice fraction",
         "grid": "atm",
     },
+    "icethick": {
+        "raw_variables": ("hi",),
+        "processor": process_direct,
+        "latitude_bounds": (-90.0, -35.0),
+        "long_name": "Sea ice thickness",
+        "grid": "ice",
+    },
+
+    # Ocean variables
     "sst": {
         "raw_variables": ("TEMP",),
         "processor": process_direct,
@@ -120,7 +130,7 @@ CESM_VAR_ARGS = {
             "value": 500.0,
             "units": "centimeters",
         },
-        "latitude_bounds": (-90.0, -30.0),
+        "latitude_bounds": (-90.0, -35.0),
         "long_name": "Sea surface temperature",
         "grid": "ocn",
     },
@@ -130,18 +140,20 @@ CESM_VAR_ARGS = {
         "depth_coordinate": "z_t",
         "depth_bounds": (0.0, 20_000.0),
         "depth_units": "centimeters",
-        "latitude_bounds": (-90.0, -30.0),
+        "latitude_bounds": (-90.0, -35.0),
         "long_name": "Top 200 m depth-averaged ocean potential temperature",
         "grid": "ocn",
     },
+
+    # Atmospheric variables
     "psl": {
         "raw_variables": ("PSL",),
         "processor": process_direct,
-        "latitude_bounds": (-90.0, -30.0),
+        "latitude_bounds": (-90.0, -35.0),
         "long_name": "Sea level pressure",
         "grid": "atm",
     },
-    "geopotential": {
+    "z500": {
         "raw_variables": ("Z3",),
         "processor": process_direct,
         "vertical_selection": {
@@ -150,31 +162,46 @@ CESM_VAR_ARGS = {
             "units": "hPa",
             "method": "nearest",
         },
-        "latitude_bounds": (-90.0, -30.0),
+        "latitude_bounds": (-90.0, -35.0),
         "long_name": "Geopotential height near 500 hPa",
+        "grid": "atm",
+    },
+    "z50": {
+        "raw_variables": ("Z3",),
+        "processor": process_direct,
+        "vertical_selection": {
+            "coordinate": "lev",
+            "value": 50.0,
+            "units": "hPa",
+            "method": "nearest",
+        },
+        "latitude_bounds": (-90.0, -35.0),
+        "long_name": "Geopotential height near 50 hPa",
         "grid": "atm",
     },
     "t2m": {
         "raw_variables": ("TREFHT",),
         "processor": process_direct,
-        "latitude_bounds": (-90.0, -30.0),
+        "latitude_bounds": (-90.0, -35.0),
         "long_name": "2-meter air temperature",
         "grid": "atm",
     },
 }
 
 DOWNLOAD_SETTINGS = {
-    "vars": ["icefrac", "sst", "ohc200", "psl", "geopotential", "t2m"],
+    "vars": ["icethick", "sst", "ohc200", "psl", "z500", "z50", "t2m"],
     "chunk": "default",
     "member_id": {
-        "icefrac": "all",
+        # "icefrac": "all",
+        "icethick": INPUT_EXPERIMENTS_SUBSET,
         "sst": INPUT_EXPERIMENTS_SUBSET,
         "ohc200": INPUT_EXPERIMENTS_SUBSET,
         "psl": INPUT_EXPERIMENTS_SUBSET,
-        "geopotential": INPUT_EXPERIMENTS_SUBSET,
+        "z500": INPUT_EXPERIMENTS_SUBSET,
+        "z50": INPUT_EXPERIMENTS_SUBSET,
         "t2m": INPUT_EXPERIMENTS_SUBSET,
     },
-    "save_directory": config.DATA_DIRECTORY,
+    "save_directory": "/scratch/users/yucli",
 }
 
 
@@ -358,7 +385,7 @@ def generate_sps_grid(grid_size=80, lat_boundary=-52.5):
 def regrid_variable(dataset, input_grid, output_grid):
     """Regrid one derived dataset to the common SPS grid."""
     start_time = time.time()
-    weights_dir = os.path.join(config.DATA_DIRECTORY, "cesm_lens", "grids")
+    weights_dir = os.path.join(config.DATA_DIRECTORY, "cesm_data", "grids")
     os.makedirs(weights_dir, exist_ok=True)
     weight_file = os.path.join(
         weights_dir, f"cesm_{input_grid}_to_sps_bilinear_regridding_weights.nc"
