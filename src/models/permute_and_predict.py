@@ -1,8 +1,4 @@
-"""
-Given a experiment config name and a variable to permute, this script will
-generate new input data files corresponding to the test set with the specified
-variable permuted in time.
-"""
+"""Evaluate a model after permuting one dynamically constructed input channel."""
 
 import numpy as np
 import xarray as xr
@@ -18,6 +14,7 @@ from src.models.models import UNetRes3
 from src.experiment_configs import load_config
 from src.utils.util_shared import write_nc_file
 from src.models.evaluate import nn_ens_members
+from src.models.models_util import CESM_Dataset
 
 def permute_ds(
     ds: xr.Dataset, 
@@ -71,6 +68,11 @@ def main():
     num_members = len(ensemble_members)
     channels, x_dim, y_dim = config.max_lead_months, 80, 80
     reference_grid = util_cesm.generate_sps_grid()
+    test_dataset = CESM_Dataset("test", config)
+    permutation_indices = {}
+    for member_id in ensemble_members:
+        rng = np.random.default_rng(args.random_seed)
+        permutation_indices[member_id] = rng.permutation(len(time_coords))
 
     # number of trained ensemble members (nn_member_id). Note that this is different than the
     # member_id, which refers to the CESM ensemble member on which we are evaluating 
@@ -120,15 +122,31 @@ def main():
 
         # Populate the Dataset with predictions
         with torch.no_grad():
-            for member_idx, member_id in enumerate(config.data_split["test"]):
+            for member_idx, member_id in enumerate(ensemble_members):
                 print(f"Permuting variable {args.var_name} for member {member_id}...")
-                input_fp = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.data_name, f"inputs_member_{member_id}.nc")
-                ds_input = xr.open_dataset(input_fp)
-                permuted_ds = permute_ds(ds_input, args.var_name, random_seed=args.random_seed)
-                
-                for time_idx, start_prediction_month in enumerate(tqdm(time_coords, desc=f"Member {member_id}")):
+                for time_idx, start_prediction_month in enumerate(
+                    tqdm(time_coords, desc=f"Member {member_id}")
+                ):
+                    input_data = test_dataset.input_data_array(
+                        member_id, start_prediction_month
+                    ).load().copy()
+                    source_time = time_coords[
+                        permutation_indices[member_id][time_idx]
+                    ]
+                    source_data = test_dataset.input_data_array(
+                        member_id, source_time
+                    )
+                    if args.var_name not in input_data.channel.values:
+                        raise ValueError(
+                            f"Unknown input channel {args.var_name!r}; "
+                            f"available channels: "
+                            f"{input_data.channel.values.tolist()}"
+                        )
+                    input_data.loc[{"channel": args.var_name}] = source_data.sel(
+                        channel=args.var_name
+                    )
                     input_tensor = torch.tensor(
-                        permuted_ds["data"].sel(start_prediction_month=start_prediction_month).values,
+                        input_data.values,
                         dtype=torch.float32,
                         device=device
                     ).unsqueeze(0)

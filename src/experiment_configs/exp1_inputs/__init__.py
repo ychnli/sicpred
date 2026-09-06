@@ -19,11 +19,20 @@ def _inputs(*additional_inputs: str) -> dict[str, dict]:
     inputs = {
         "icefrac": {"include": True, "norm": True, "land_mask": True, "lag": 12,
                     "divide_by_stdev": False, "auxiliary": False, "use_min_max": False},
+        "icethick": {"include": "icethick" in enabled, "norm": True,
+                     "land_mask": True, "lag": 6, "divide_by_stdev": False,
+                     "auxiliary": False, "use_min_max": True},
         "sst": {"include": "sst" in enabled, "norm": True, "land_mask": True, "lag": 6,
                 "divide_by_stdev": False, "auxiliary": False, "use_min_max": True},
-        "geopotential": {"include": "geopotential" in enabled, "norm": True,
-                         "land_mask": False, "lag": 6, "divide_by_stdev": False,
-                         "auxiliary": False, "use_min_max": True},
+        "ohc200": {"include": "ohc200" in enabled, "norm": True,
+                   "land_mask": True, "lag": 6, "divide_by_stdev": False,
+                   "auxiliary": False, "use_min_max": True},
+        "z500": {"include": "z500" in enabled, "norm": True,
+                 "land_mask": False, "lag": 6, "divide_by_stdev": False,
+                 "auxiliary": False, "use_min_max": True},
+        "z50": {"include": "z50" in enabled, "norm": True,
+                "land_mask": False, "lag": 6, "divide_by_stdev": False,
+                "auxiliary": False, "use_min_max": True},
         "psl": {"include": "psl" in enabled, "norm": True, "land_mask": False, "lag": 6,
                 "divide_by_stdev": False, "auxiliary": False, "use_min_max": True},
         "t2m": {"include": "t2m" in enabled, "norm": True, "land_mask": False, "lag": 6,
@@ -123,15 +132,27 @@ CONFIGS = {
     "input3c": _active_config(
         "input3c", "seaice_plus_z500",
         "Previous 12 months of sea ice + land mask and sin() and cos() of month + 6 months of z500",
-        "geopotential"),
+        "z500"),
     "input3d": _active_config(
         "input3d", "seaice_plus_t2m",
         "Previous 12 months of sea ice + land mask and sin() and cos() of month + 6 months of t2m",
         "t2m"),
+    "input3e": _active_config(
+        "input3e", "seaice_plus_z50",
+        "Previous 12 months of sea ice + land mask and sin() and cos() of month + 6 months of z50",
+        "z50"),
+    "input3f": _active_config(
+        "input3f", "seaice_plus_ohc200",
+        "Previous 12 months of sea ice + land mask and sin() and cos() of month + 6 months of top-200-m ocean heat content",
+        "ohc200"),
+    "input3g": _active_config(
+        "input3g", "seaice_plus_icethick",
+        "Previous 12 months of sea ice + land mask and sin() and cos() of month + 6 months of sea ice thickness",
+        "icethick"),
     "input4": _active_config(
         "input4", "seaice_plus_all",
         "Previous 12 months of sea ice + land mask and sin() and cos() of month      + 6 months of SST + atmospheric vars",
-        "sst", "geopotential", "psl", "t2m"),
+        "sst", "z500", "psl", "t2m"),
     "input3a_dev": _legacy_config(
         "input3a_dev", "seaice_plus_temp_dev",
         "Previous 12 months of sea ice + land mask and sin() and cos() of month + 6 months of SST",

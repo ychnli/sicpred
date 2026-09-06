@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-vars=(sst psl geopotential t2m)
+vars=(sst psl z500 t2m)
 lags=(lag1 lag2 lag3 lag4 lag5 lag6)
 
 for lag in "${lags[@]}"; do

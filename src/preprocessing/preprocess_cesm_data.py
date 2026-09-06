@@ -1,8 +1,7 @@
-######################################################################
-# This script normalizes the CESM data and then concatenates the data
-# into model-ready data pairs and saves them. 
-#
-######################################################################
+"""
+This script normalizes CESM data according to the data split settings
+given by the desired configuration. 
+"""
 
 import os 
 import pprint
@@ -33,7 +32,6 @@ def main():
 
     # create directories for saving processed data
     os.makedirs(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", config.data_name), exist_ok=True)
-    os.makedirs(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.data_name), exist_ok=True)
 
     # merge downloaded data, if not already
     util_cesm.merge_data_by_member()
@@ -70,15 +68,6 @@ def main():
             pickle.dump(month_weights, f)
         print("done! \n\n")
 
-    # Prepare model-ready data pairs (concatenate stuff) 
-    print("Prepping model-ready data pairs... \n")
-    model_data_save_path = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.data_name)
-    os.makedirs(model_data_save_path, exist_ok=True)
-
-    util_cesm.save_inputs_files(config.input_config, model_data_save_path, config.data_split, overwrite=args.overwrite)
-
-    util_cesm.save_targets_files(config.input_config, config.target_config, model_data_save_path,
-                                 config.max_lead_months, config.data_split, overwrite=args.overwrite)
     print("all done! \n\n")
 
 

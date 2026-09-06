@@ -21,6 +21,9 @@ from src.experiment_configs import (
         ("exp1_inputs:input3b", "exp1_input3b", "seaice_plus_psl"),
         ("exp1_inputs:input3c", "exp1_input3c", "seaice_plus_z500"),
         ("exp1_inputs:input3d", "exp1_input3d", "seaice_plus_t2m"),
+        ("exp1_inputs:input3e", "exp1_input3e", "seaice_plus_z50"),
+        ("exp1_inputs:input3f", "exp1_input3f", "seaice_plus_ohc200"),
+        ("exp1_inputs:input3g", "exp1_input3g", "seaice_plus_icethick"),
         ("exp1_inputs:input4", "exp1_input4", "seaice_plus_all"),
         ("exp2_data_volume:vol1", "exp2_vol1", "seaice_plus_auxiliary_vol1"),
         ("exp2_data_volume:vol4", "exp2_vol4", "seaice_plus_auxiliary_vol4"),
@@ -41,9 +44,12 @@ def test_input_variants_only_enable_their_named_predictors():
         "input2": set(),
         "input3a": {"sst"},
         "input3b": {"psl"},
-        "input3c": {"geopotential"},
+        "input3c": {"z500"},
         "input3d": {"t2m"},
-        "input4": {"sst", "psl", "geopotential", "t2m"},
+        "input3e": {"z50"},
+        "input3f": {"ohc200"},
+        "input3g": {"icethick"},
+        "input4": {"sst", "psl", "z500", "t2m"},
     }
 
     for variant, extra_inputs in expected.items():
@@ -54,6 +60,34 @@ def test_input_variants_only_enable_their_named_predictors():
             if settings["include"] and not settings["auxiliary"]
         }
         assert physical_inputs == {"icefrac", *extra_inputs}
+
+
+@pytest.mark.parametrize(
+    ("variant", "variable"),
+    [
+        ("input3e", "z50"),
+        ("input3f", "ohc200"),
+        ("input3g", "icethick"),
+    ],
+)
+def test_new_input_ablations_use_six_month_lags(variant, variable):
+    config = load_config(f"exp1_inputs:{variant}")
+    reference = load_config("exp1_inputs:input3a")
+
+    assert config.input_config[variable]["lag"] == 6
+    assert config.max_lead_months == reference.max_lead_months
+    assert config.model == reference.model
+    assert config.model_args == reference.model_args
+    assert config.learning_rate == reference.learning_rate
+    assert config.weight_decay == reference.weight_decay
+    assert config.batch_size == reference.batch_size
+    assert config.num_epochs == reference.num_epochs
+    assert config.data_split["train"] == reference.data_split["train"]
+    assert config.data_split["val"] == reference.data_split["val"]
+    assert config.data_split["test"] == reference.data_split["test"]
+    assert config.data_split["time_range"].equals(
+        reference.data_split["time_range"]
+    )
 
 
 def test_data_volume_variants_only_change_training_volume_and_identity():

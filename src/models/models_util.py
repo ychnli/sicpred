@@ -12,91 +12,182 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 from src import config_cesm
+from src.utils import util_cesm
 
 ##########################################################################################
 # Model utils
 ##########################################################################################
 
 class CESM_Dataset(torch.utils.data.Dataset):
-    def __init__(self, split, data_split_settings):
-        """
-        Param:
-            (string)        split ('test', 'val', or 'train', or 'all)
-            (dict)          data_split_settings
+    """Construct lagged model samples dynamically from normalized time series."""
 
-        """
-
-        self.data_dir = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", data_split_settings["name"])
+    def __init__(self, split, experiment_config):
+        self.config = experiment_config
+        self.data_split_settings = experiment_config.data_split
         self.split = split
+        self._cache_pid = None
+        self._input_data = None
+        self._target_data = None
+        self._land_mask = None
 
-        # Extract split settings
-        self.split_by = data_split_settings["split_by"]
-        if split == 'all':
-            if self.split_by == "time":
-                self.split_range = data_split_settings["train"].union(data_split_settings["val"]).union(data_split_settings["test"])
+        if split not in {"train", "val", "test", "all"}:
+            raise ValueError("split must be 'train', 'val', 'test', or 'all'")
+
+        self.split_by = self.data_split_settings["split_by"]
+        if self.split_by == "time":
+            member_ids = self.data_split_settings["member_ids"]
+            if split == "all":
+                prediction_months = util_cesm.get_start_prediction_months(
+                    self.data_split_settings
+                )
             else:
-                raise NotImplementedError()
-        else:
-            self.split_range = data_split_settings[split]
-
-        # Build a global index of samples
-        self.samples = []
-        if self.split_by == "time": 
-            if isinstance(data_split_settings["member_ids"], list):
-                member_ids = data_split_settings["member_ids"]
-            else:
-                member_ids = [data_split_settings["member_ids"]]
-            for member_id in member_ids:
-                input_file = os.path.join(self.data_dir, f"inputs_member_{member_id}.nc")
-                ds = xr.open_dataset(input_file) 
-
-                time_values = ds["start_prediction_month"].values
-                for start_idx, time_val in enumerate(time_values):
-                    if time_val in self.split_range:
-                        self.samples.append((member_id, time_val, start_idx))
-
+                prediction_months = self.data_split_settings[split]
         elif self.split_by == "ensemble_member":
-            for member_id in self.split_range: 
-                input_file = os.path.join(self.data_dir, f"inputs_member_{member_id}.nc")
-                ds = xr.open_dataset(input_file) 
+            prediction_months = self.data_split_settings["time_range"]
+            if split == "all":
+                member_ids = [
+                    *self.data_split_settings["train"],
+                    *self.data_split_settings["val"],
+                    *self.data_split_settings["test"],
+                ]
+            else:
+                member_ids = self.data_split_settings[split]
+        else:
+            raise ValueError(f"Unsupported split_by={self.split_by!r}")
 
-                time_values = ds["start_prediction_month"].values
-                for start_idx, time_val in enumerate(time_values):
-                    if time_val in data_split_settings["time_range"]:
-                        self.samples.append((member_id, time_val, start_idx))
+        self.member_ids = list(member_ids)
+        self.start_prediction_months = pd.DatetimeIndex(prediction_months)
+        self.samples = [
+            (member_id, pd.Timestamp(start_prediction_month))
+            for member_id in self.member_ids
+            for start_prediction_month in self.start_prediction_months
+        ]
+
+    def _close_cache(self):
+        arrays = []
+        if self._input_data is not None:
+            arrays.extend(self._input_data.values())
+        if self._target_data is not None:
+            arrays.append(self._target_data)
+        for array in {id(array): array for array in arrays}.values():
+            close = getattr(array, "close", None)
+            if close is not None:
+                close()
+        self._input_data = None
+        self._target_data = None
+        self._land_mask = None
+        self._cache_pid = None
+
+    def _ensure_process_cache(self):
+        current_pid = os.getpid()
+        if self._cache_pid != current_pid:
+            self._close_cache()
+            self._cache_pid = current_pid
+
+    def _ensure_input_cache(self):
+        self._ensure_process_cache()
+        if self._input_data is not None:
+            return
+
+        self._input_data = util_cesm.load_inputs_data_da_dict(
+            self.config.input_config, self.data_split_settings
+        )
+        land_settings = self.config.input_config.get("land_mask", {})
+        if land_settings.get("include"):
+            with xr.open_dataset(util_cesm.LAND_MASK_PATH) as land_mask_ds:
+                self._land_mask = land_mask_ds["mask"].values
+
+    def _ensure_target_cache(self):
+        self._ensure_process_cache()
+        if self._target_data is not None:
+            return
+
+        if (
+            self.config.target_config["predict_anom"]
+            and self._input_data is not None
+        ):
+            self._target_data = self._input_data["icefrac"]
+            return
+
+        if self.config.target_config["predict_anom"]:
+            target_path = os.path.join(
+                config_cesm.PROCESSED_DATA_DIRECTORY,
+                "normalized_inputs",
+                self.config.data_name,
+                "icefrac_norm.nc",
+            )
+        elif self.data_split_settings["member_ids"] == ["obs"]:
+            target_path = os.path.join(
+                config_cesm.DATA_DIRECTORY, "obs_data", "icefrac_obs.nc"
+            )
+        else:
+            target_path = os.path.join(
+                config_cesm.DATA_DIRECTORY,
+                "cesm_data",
+                "icefrac",
+                "icefrac_combined.nc",
+            )
+        self._target_data = xr.open_dataset(
+            target_path, chunks={"member_id": 1}
+        )["icefrac"]
+        if "month" in self._target_data.coords:
+            self._target_data = self._target_data.drop_vars("month")
+
+    def input_data_array(self, member_id, start_prediction_month):
+        """Build one input sample as an xarray DataArray."""
+        self._ensure_input_cache()
+        return util_cesm.build_input_sample(
+            self._input_data,
+            self.config.input_config,
+            member_id,
+            start_prediction_month,
+            land_mask=self._land_mask,
+        )
+
+    def target_data_array(self, member_id, start_prediction_month):
+        """Build one target sample as an xarray DataArray."""
+        self._ensure_target_cache()
+        return util_cesm.build_target_sample(
+            self._target_data,
+            member_id,
+            start_prediction_month,
+            self.config.max_lead_months,
+        )
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        member_id, start_prediction_month, start_idx = self.samples[idx]
-        input_file = os.path.join(self.data_dir, f"inputs_member_{member_id}.nc")
-        target_file = os.path.join(self.data_dir, f"targets_member_{member_id}.nc")
+        member_id, start_prediction_month = self.samples[idx]
+        input_sample = self.input_data_array(member_id, start_prediction_month)
+        target_sample = self.target_data_array(member_id, start_prediction_month)
 
-        # Load the specific sample lazily
-        with xr.open_dataset(input_file) as input_ds:
-            input_sample = input_ds["data"].isel(start_prediction_month=start_idx)
+        target_months = pd.date_range(
+            start_prediction_month,
+            start_prediction_month
+            + pd.DateOffset(months=self.config.max_lead_months - 1),
+            freq="MS",
+        )
+        time_npy = np.column_stack((target_months.year, target_months.month))
 
-        with xr.open_dataset(target_file) as target_ds:
-            target_sample = target_ds["data"].isel(start_prediction_month=start_idx)
-        
-        start_prediction_month = input_sample.start_prediction_month.values
-
-        max_lead_months = target_sample.shape[0]
-        start_prediction_months = pd.date_range(start_prediction_month, 
-                                                start_prediction_month + pd.DateOffset(months=max_lead_months-1),
-                                                freq="MS")
-
-        time_npy = np.column_stack((start_prediction_months.year, start_prediction_months.month))
-
-        sample = {
+        return {
             "input": torch.tensor(input_sample.values, dtype=torch.float32),
             "target": torch.tensor(target_sample.values, dtype=torch.float32),
             "start_prediction_month": time_npy,
-            "member_id": member_id
+            "member_id": member_id,
         }
 
-        return sample
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state["_cache_pid"] = None
+        state["_input_data"] = None
+        state["_target_data"] = None
+        state["_land_mask"] = None
+        return state
+
+    def __del__(self):
+        if hasattr(self, "_input_data"):
+            self._close_cache()
 
 
 class Obs_Dataset(torch.utils.data.Dataset):

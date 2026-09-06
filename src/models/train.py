@@ -165,8 +165,8 @@ def main():
                    mode="online", 
                    config={"lr": config.learning_rate, "batch_size": config.batch_size})
 
-        train_dataset = CESM_Dataset("train", config.data_split)
-        val_dataset = CESM_Dataset("val", config.data_split)
+        train_dataset = CESM_Dataset("train", config)
+        val_dataset = CESM_Dataset("val", config)
         train_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
         val_dataloader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False)
 

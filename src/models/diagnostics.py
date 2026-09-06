@@ -10,6 +10,7 @@ from src.utils import util_shared
 from src.experiment_configs import load_config
 from src import config_cesm
 from src.models import baselines
+from src.models.models_util import CESM_Dataset
 
 REFERENCE_GRID = util_cesm.generate_sps_grid()
 AREA_WEIGHTS = util_cesm.calculate_area_weights()
@@ -35,17 +36,26 @@ def load_model_predictions(config):
 
 
 def load_targets(config, split):
-    ensemble_members, time_coords = get_ensemble_members_and_time_coords(config.data_split, split)
-    data_dir = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.data_split["name"])
-    ds_list = []
+    ensemble_members, time_coords = get_ensemble_members_and_time_coords(
+        config.data_split, split
+    )
+    dataset = CESM_Dataset(split, config)
+    member_arrays = []
     for member_id in ensemble_members:
-        ds = xr.open_dataset(os.path.join(data_dir, f"targets_member_{member_id}.nc")).data.load()
-        ds_list.append(ds)
+        time_arrays = [
+            dataset.target_data_array(member_id, start_prediction_month)
+            for start_prediction_month in time_coords
+        ]
+        member_arrays.append(
+            xr.concat(time_arrays, dim="start_prediction_month")
+        )
 
-    targets = xr.concat(ds_list, dim="member_id").sel(start_prediction_month=time_coords)
-    targets = targets.transpose("start_prediction_month", "member_id", "lead_time", "y", "x")
-
-    return targets
+    targets = xr.concat(member_arrays, dim="member_id").assign_coords(
+        member_id=ensemble_members
+    )
+    return targets.transpose(
+        "start_prediction_month", "member_id", "lead_time", "y", "x"
+    ).load()
 
 
 def calculate_acc(pred_anom, truth_anom, aggregate=False, dim=("x","y")):

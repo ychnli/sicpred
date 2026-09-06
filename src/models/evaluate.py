@@ -57,9 +57,11 @@ def main():
     if args.zero_shot is not None:
         config_zs = load_config(args.zero_shot)
         data_split_settings = config_zs.data_split
+        dataset_config = config_zs
     else:
         config_zs = None
         data_split_settings = config.data_split
+        dataset_config = config
 
     # Construct save paths and check if exists
     if args.zero_shot is not None:
@@ -81,7 +83,7 @@ def main():
         return
 
     # Dataset / dataloader
-    test_dataset = CESM_Dataset(args.split, data_split_settings)
+    test_dataset = CESM_Dataset(args.split, dataset_config)
     use_cuda = (args.device == "cuda") or (args.device is None and torch.cuda.is_available())
     if args.device in ["cuda", "cpu"]:
         device = torch.device(args.device)
