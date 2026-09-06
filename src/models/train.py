@@ -8,24 +8,16 @@ from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from tqdm import tqdm
 import argparse 
-import importlib.util
 import inspect
 import random
 
 from src.models.models_util import CESM_Dataset
 from src.models.models import UNetRes3
-from src.models.models import SICNet
 from src.models.optim import build_lr_scheduler, build_optimizer
 from src.utils import util_cesm
 from src import config_cesm
+from src.experiment_configs import load_config
 from src.models.losses import WeightedMSELoss
-
-
-def load_config(config_path):
-    spec = importlib.util.spec_from_file_location("config", config_path)
-    config = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(config)
-    return config
 
 
 def train_epoch(
@@ -137,7 +129,7 @@ def get_best_checkpoint(checkpoint_dir, member_id=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Train a model with specified config.")
-    parser.add_argument("--config", type=str, required=True, help="Path to the configuration file (e.g., config.py)")
+    parser.add_argument("--config", type=str, required=True, help="Named configuration selector (e.g., exp1_inputs:input2)")
     parser.add_argument(
         "--pretrained",
         type=str,
@@ -160,7 +152,7 @@ def main():
     config = load_config(args.config)
 
     # Early stopping
-    patience = int(getattr(config, "PATIENCE", 3))
+    patience = config.patience
 
     for ensemble_id in range(args.members):
         ensemble_id = args.start_ens_id + ensemble_id
@@ -168,29 +160,29 @@ def main():
 
         # Initialize WandB
         wandb.init(project="sea-ice-prediction", 
-                   name=f"{config.EXPERIMENT_NAME}_member_{ensemble_id}",
-                   notes=config.NOTES, 
+                   name=f"{config.experiment_name}_member_{ensemble_id}",
+                   notes=config.notes,
                    mode="online", 
-                   config={"lr": config.LEARNING_RATE, "batch_size": config.BATCH_SIZE})
+                   config={"lr": config.learning_rate, "batch_size": config.batch_size})
 
-        train_dataset = CESM_Dataset("train", config.DATA_SPLIT_SETTINGS)
-        val_dataset = CESM_Dataset("val", config.DATA_SPLIT_SETTINGS)
-        train_dataloader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, shuffle=True)
-        val_dataloader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False)
+        train_dataset = CESM_Dataset("train", config.data_split)
+        val_dataset = CESM_Dataset("val", config.data_split)
+        train_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
+        val_dataloader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False)
 
         # initialize model
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        in_channels = util_cesm.get_num_input_channels(config.INPUT_CONFIG)
-        out_channels = util_cesm.get_num_output_channels(config.MAX_LEAD_MONTHS, config.TARGET_CONFIG)
-        if config.MODEL == "UNetRes3": 
+        in_channels = util_cesm.get_num_input_channels(config.input_config)
+        out_channels = util_cesm.get_num_output_channels(config.max_lead_months, config.target_config)
+        if config.model == "UNetRes3":
             model = UNetRes3(in_channels=in_channels, 
                             out_channels=out_channels, 
-                            predict_anomalies=config.TARGET_CONFIG["predict_anom"],
-                            **config.MODEL_ARGS).to(device)
-        elif config.MODEL == "SICNet":
+                            predict_anomalies=config.target_config["predict_anom"],
+                            **config.model_args).to(device)
+        elif config.model == "SICNet":
             model = SICNet(T=in_channels, T_pred=out_channels, base_channels=32).to(device)
         else: 
-            raise NotImplementedError(f"Model {config.MODEL} not implemented.")
+            raise NotImplementedError(f"Model {config.model} not implemented.")
 
         # Optional: load pretrained weights for finetuning.
         # This expects a checkpoint format produced by this script (a dict with
@@ -217,23 +209,23 @@ def main():
             config,
             optimizer,
             steps_per_epoch=len(train_dataloader),
-            total_epochs=config.NUM_EPOCHS,
+            total_epochs=config.num_epochs,
             global_step=0,
         )
 
         # initialize loss function
-        if config.LOSS_FUNCTION == "MSE": 
+        if config.loss_function == "MSE":
             area_weights = util_cesm.calculate_area_weights()
-            with open(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", config.DATA_CONFIG_NAME, "month_weights.pkl"), "rb") as f:
+            with open(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", config.data_name, "month_weights.pkl"), "rb") as f:
                 month_weights = pickle.load(f)
             loss_fn = WeightedMSELoss(device, area_weights, month_weights)
         else:
-            raise NotImplementedError(f"Loss {config.LOSS_FUNCTION} not implemented.")
+            raise NotImplementedError(f"Loss {config.loss_function} not implemented.")
         
         # Load a checkpoint if it exists
-        save_dir = os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME)
+        save_dir = os.path.join(config_cesm.MODEL_DIRECTORY, config.experiment_name)
         start_epoch = 1
-        total_epochs = config.NUM_EPOCHS
+        total_epochs = config.num_epochs
         global_step = 0
         best_val_loss = float("inf")
         best_epoch = 0
@@ -315,7 +307,7 @@ def main():
                 epochs_without_improvement = 0
                 best_checkpoint_path = os.path.join(
                     save_dir,
-                    f"{config.MODEL}_{config.EXPERIMENT_NAME}_member_{ensemble_id}_best.pth",
+                    f"{config.model}_{config.experiment_name}_member_{ensemble_id}_best.pth",
                 )
                 torch.save(
                     {
@@ -334,9 +326,9 @@ def main():
                 epochs_without_improvement += 1
 
             # Save a checkpoint
-            file_name = f"{config.MODEL}_{config.EXPERIMENT_NAME}_member_{ensemble_id}_epoch_{epoch}.pth"
+            file_name = f"{config.model}_{config.experiment_name}_member_{ensemble_id}_epoch_{epoch}.pth"
             checkpoint_path = os.path.join(save_dir, file_name)
-            if epoch % config.CHECKPOINT_INTERVAL == 0:
+            if epoch % config.checkpoint_interval == 0:
                 torch.save({
                     "epoch": epoch,
                     "global_step": global_step,
@@ -359,7 +351,7 @@ def main():
 
         # Save the final model
         final_checkpoint_path = os.path.join(save_dir, 
-                                f"{config.MODEL}_{config.EXPERIMENT_NAME}_member_{ensemble_id}_final.pth")
+                                f"{config.model}_{config.experiment_name}_member_{ensemble_id}_final.pth")
         torch.save(model.state_dict(), final_checkpoint_path)
         wandb.finish()
 

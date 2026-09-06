@@ -15,7 +15,8 @@ import argparse
 from src import config_cesm
 from src.utils import util_cesm
 from src.models.models import UNetRes3
-from src.utils.util_shared import load_config, write_nc_file
+from src.experiment_configs import load_config
+from src.utils.util_shared import write_nc_file
 from src.models.evaluate import nn_ens_members
 
 def permute_ds(
@@ -42,7 +43,7 @@ def main():
         "--config",
         type=str,
         required=True,
-        help="Path to the configuration file (e.g., config.py)",
+        help="Named configuration selector (e.g., exp1_inputs:input2)",
     )
     parser.add_argument(
         "--var_name",
@@ -61,14 +62,14 @@ def main():
     config = load_config(args.config)
 
     # Initialize an empty dataset 
-    if config.DATA_SPLIT_SETTINGS["split_by"] == "ensemble_member":
-        ensemble_members = config.DATA_SPLIT_SETTINGS["test"]
-        time_coords = config.DATA_SPLIT_SETTINGS["time_range"]
-    elif config.DATA_SPLIT_SETTINGS["split_by"] == "time":
-        ensemble_members = config.DATA_SPLIT_SETTINGS["member_ids"]
-        time_coords = config.DATA_SPLIT_SETTINGS["test"]
+    if config.data_split["split_by"] == "ensemble_member":
+        ensemble_members = config.data_split["test"]
+        time_coords = config.data_split["time_range"]
+    elif config.data_split["split_by"] == "time":
+        ensemble_members = config.data_split["member_ids"]
+        time_coords = config.data_split["test"]
     num_members = len(ensemble_members)
-    channels, x_dim, y_dim = config.MAX_LEAD_MONTHS, 80, 80
+    channels, x_dim, y_dim = config.max_lead_months, 80, 80
     reference_grid = util_cesm.generate_sps_grid()
 
     # number of trained ensemble members (nn_member_id). Note that this is different than the
@@ -93,21 +94,21 @@ def main():
         }
     )
 
-    in_channels = util_cesm.get_num_input_channels(config.INPUT_CONFIG)
-    out_channels = util_cesm.get_num_output_channels(config.MAX_LEAD_MONTHS, config.TARGET_CONFIG)
+    in_channels = util_cesm.get_num_input_channels(config.input_config)
+    out_channels = util_cesm.get_num_output_channels(config.max_lead_months, config.target_config)
     
     # Load model architecture
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if config.MODEL == "UNetRes3": 
+    if config.model == "UNetRes3":
         model = UNetRes3(in_channels=in_channels, 
                         out_channels=out_channels, 
-                        predict_anomalies=config.TARGET_CONFIG["predict_anom"],
-                        **config.MODEL_ARGS).to(device)
+                        predict_anomalies=config.target_config["predict_anom"],
+                        **config.model_args).to(device)
     else: 
-        raise NotImplementedError(f"Model {config.MODEL} not implemented.")
+        raise NotImplementedError(f"Model {config.model} not implemented.")
     
     for nn_member_idx, filename in enumerate(nn_ens_members(config)):
-        checkpoint_path = os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME, filename)
+        checkpoint_path = os.path.join(config_cesm.MODEL_DIRECTORY, config.experiment_name, filename)
 
         if not os.path.exists(checkpoint_path): 
             raise FileNotFoundError(f"No checkpoint file found at {checkpoint_path}")
@@ -119,9 +120,9 @@ def main():
 
         # Populate the Dataset with predictions
         with torch.no_grad():
-            for member_idx, member_id in enumerate(config.DATA_SPLIT_SETTINGS["test"]):
+            for member_idx, member_id in enumerate(config.data_split["test"]):
                 print(f"Permuting variable {args.var_name} for member {member_id}...")
-                input_fp = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.DATA_CONFIG_NAME, f"inputs_member_{member_id}.nc")
+                input_fp = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.data_name, f"inputs_member_{member_id}.nc")
                 ds_input = xr.open_dataset(input_fp)
                 permuted_ds = permute_ds(ds_input, args.var_name, random_seed=args.random_seed)
                 
@@ -135,7 +136,7 @@ def main():
                     ds["predictions"][time_idx, member_idx, nn_member_idx, :, :, :] = predictions
                 
     # Save the Dataset as NetCDF
-    output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config.EXPERIMENT_NAME, "permute")
+    output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config.experiment_name, "permute")
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"permute_{args.var_name}_predictions.nc")
     write_nc_file(ds, output_path, overwrite=args.overwrite)

@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader
 import argparse
-import importlib.util
 import xarray as xr
 import re
 from tqdm import tqdm  
@@ -14,21 +13,15 @@ from src.models.models import UNetRes3
 from src.utils import util_cesm
 from src.utils import util_shared
 from src import config_cesm
-
-
-def load_config(config_path):
-    spec = importlib.util.spec_from_file_location("config", config_path)
-    config = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(config)
-    return config
+from src.experiment_configs import load_config
 
 def nn_ens_members(config): 
     """ Given a config file, returns a list of checkpoint files for trained ensemble members (diff training
         initializations), using a regex """
 
-    files = os.listdir(os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME))
+    files = os.listdir(os.path.join(config_cesm.MODEL_DIRECTORY, config.experiment_name))
     pattern = re.compile(
-        rf"{config.MODEL}_{config.EXPERIMENT_NAME}_member_\d+_{config.CHECKPOINT_TO_EVALUATE}\.pth"
+        rf"{config.model}_{config.experiment_name}_member_\d+_{config.checkpoint_to_evaluate}\.pth"
     )
     return sorted([filename for filename in files if pattern.match(filename)])
 
@@ -46,13 +39,13 @@ from tqdm import tqdm
 def main():
     parser = argparse.ArgumentParser(description="Train a model with specified config.")
     parser.add_argument("--config", type=str, required=True,
-                        help="Path to the configuration file of the model (e.g., config.py)")
+                        help="Named configuration selector (e.g., exp1_inputs:input2)")
     parser.add_argument("--device", type=str, help="cuda or cpu")
     parser.add_argument("--split", type=str, default="test")
     parser.add_argument("--overwrite", action="store_true",
                         help="If set, overwrite existing output files.")
     parser.add_argument("--zero-shot", type=str, default=None,
-                        help="Path to another configuration file for a dataset that the model has not seen "
+                        help="Named configuration selector for a dataset that the model has not seen "
                              "to evaluate the model on (e.g., evaluating a model pretrained on CESM "
                              "to zero-shot predict obs)")
     parser.add_argument("--batch-size", type=int, default=12)
@@ -63,23 +56,23 @@ def main():
     config = load_config(args.config)
     if args.zero_shot is not None:
         config_zs = load_config(args.zero_shot)
-        data_split_settings = config_zs.DATA_SPLIT_SETTINGS
+        data_split_settings = config_zs.data_split
     else:
         config_zs = None
-        data_split_settings = config.DATA_SPLIT_SETTINGS
+        data_split_settings = config.data_split
 
     # Construct save paths and check if exists
     if args.zero_shot is not None:
-        output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config_zs.EXPERIMENT_NAME)
+        output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config_zs.experiment_name)
         output_path = os.path.join(
             output_dir,
-            f"{config.EXPERIMENT_NAME}_{config.MODEL}_zeroshot_predictions.nc"
+            f"{config.experiment_name}_{config.model}_zeroshot_predictions.nc"
         )
     else:
-        output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config.EXPERIMENT_NAME)
+        output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config.experiment_name)
         output_path = os.path.join(
             output_dir,
-            f"{config.MODEL}_{config.CHECKPOINT_TO_EVALUATE}_predictions.nc"
+            f"{config.model}_{config.checkpoint_to_evaluate}_predictions.nc"
         )
 
     os.makedirs(output_dir, exist_ok=True)
@@ -104,19 +97,19 @@ def main():
         persistent_workers=(args.num_workers > 0),
     )
 
-    in_channels = util_cesm.get_num_input_channels(config.INPUT_CONFIG)
-    out_channels = util_cesm.get_num_output_channels(config.MAX_LEAD_MONTHS, config.TARGET_CONFIG)
+    in_channels = util_cesm.get_num_input_channels(config.input_config)
+    out_channels = util_cesm.get_num_output_channels(config.max_lead_months, config.target_config)
 
     # Load model architecture
-    if config.MODEL == "UNetRes3":
+    if config.model == "UNetRes3":
         model = UNetRes3(
             in_channels=in_channels,
             out_channels=out_channels,
-            predict_anomalies=config.TARGET_CONFIG["predict_anom"],
-            **config.MODEL_ARGS,
+            predict_anomalies=config.target_config["predict_anom"],
+            **config.model_args,
         ).to(device)
     else:
-        raise NotImplementedError(f"Model {config.MODEL} not implemented.")
+        raise NotImplementedError(f"Model {config.model} not implemented.")
 
     # Figure out output coordinates
     if data_split_settings["split_by"] == "ensemble_member":
@@ -148,7 +141,7 @@ def main():
 
     num_members = len(ensemble_members)
     num_nn_members = len(nn_ens_members(config))
-    channels, x_dim, y_dim = config.MAX_LEAD_MONTHS, 80, 80
+    channels, x_dim, y_dim = config.max_lead_months, 80, 80
     reference_grid = util_cesm.generate_sps_grid()
 
     # Build output dataset
@@ -179,7 +172,7 @@ def main():
     member_to_idx = {m: i for i, m in enumerate(ensemble_members)}
 
     for nn_member_idx, filename in enumerate(nn_ens_members(config)):
-        checkpoint_path = os.path.join(config_cesm.MODEL_DIRECTORY, config.EXPERIMENT_NAME, filename)
+        checkpoint_path = os.path.join(config_cesm.MODEL_DIRECTORY, config.experiment_name, filename)
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError(f"No checkpoint file found at {checkpoint_path}")
 

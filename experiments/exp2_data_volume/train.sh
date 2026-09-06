@@ -8,7 +8,7 @@
 # training the model with the most training data (vol3 and vol4). 
 ###################################################################################
 
-python3 -m src.models.train --config src/experiment_configs/exp2_data_volume/vol1.py --members 5
-python3 -m src.models.train --config src/experiment_configs/exp2_data_volume/vol2.py --members 3
-python3 -m src.models.train --config src/experiment_configs/exp2_data_volume/vol3.py --members 1
-python3 -m src.models.train --config src/experiment_configs/exp2_data_volume/vol4.py --members 1
+python3 -m src.models.train --config exp2_data_volume:vol1 --members 5
+python3 -m src.models.train --config exp2_data_volume:vol2 --members 3
+python3 -m src.models.train --config exp2_data_volume:vol3 --members 1
+python3 -m src.models.train --config exp2_data_volume:vol4 --members 1

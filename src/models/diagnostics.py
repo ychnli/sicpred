@@ -7,6 +7,7 @@ import pandas as pd
 
 from src.utils import util_cesm
 from src.utils import util_shared
+from src.experiment_configs import load_config
 from src import config_cesm
 from src.models import baselines
 
@@ -27,15 +28,15 @@ def get_ensemble_members_and_time_coords(data_split_settings, split):
 def load_model_predictions(config):
     """
     """
-    output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config["EXPERIMENT_NAME"])
-    output_path = os.path.join(output_dir, f"{config['MODEL']}_{config['CHECKPOINT_TO_EVALUATE']}_predictions.nc")
+    output_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config.experiment_name)
+    output_path = os.path.join(output_dir, f"{config.model}_{config.checkpoint_to_evaluate}_predictions.nc")
     predictions = xr.open_dataset(output_path).predictions 
     return predictions 
 
 
 def load_targets(config, split):
-    ensemble_members, time_coords = get_ensemble_members_and_time_coords(config["DATA_SPLIT_SETTINGS"], split)
-    data_dir = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config["DATA_SPLIT_SETTINGS"]["name"])
+    ensemble_members, time_coords = get_ensemble_members_and_time_coords(config.data_split, split)
+    data_dir = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.data_split["name"])
     ds_list = []
     for member_id in ensemble_members:
         ds = xr.open_dataset(os.path.join(data_dir, f"targets_member_{member_id}.nc")).data.load()
@@ -233,7 +234,7 @@ def compute_ice_mask(data_source):
 
 def main():
     parser = argparse.ArgumentParser(description="Compute diagnostics for model predictions.")
-    parser.add_argument("--config", type=str, required=True, help="Path to the configuration file (e.g., config.py)")
+    parser.add_argument("--config", type=str, required=True, help="Named configuration selector (e.g., exp1_inputs:input2)")
     parser.add_argument("--overwrite", action="store_true", help="If set, overwrite existing output files.")
     parser.add_argument("--baselines", action="store_true", help="If set, calculates persistence and climatology baselines too.")
     parser.add_argument("--ensemble-mean", action="store_true", help="If set, computes the ensemble mean prediction and calculates the diagnostics for it.")
@@ -242,20 +243,19 @@ def main():
     parser.add_argument("--permute-var", type=str, default=None, help="If set, permute the specified variable before computing diagnostics.")
     args = parser.parse_args()
 
-    config = util_shared.load_config(args.config)
-    config_dict = util_shared.load_globals(config)
-    base_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config_dict["EXPERIMENT_NAME"])
-    save_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config_dict["EXPERIMENT_NAME"], "diagnostics")
+    config = load_config(args.config)
+    base_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config.experiment_name)
+    save_dir = os.path.join(config_cesm.PREDICTIONS_DIRECTORY, config.experiment_name, "diagnostics")
     predictions_path = args.predictions_path
     os.makedirs(save_dir, exist_ok=True)
 
-    targets = load_targets(config_dict, split="test")
+    targets = load_targets(config, split="test")
 
     if args.permute_var is not None:
         # TODO: remove the permute-var flag and merge this logic into using just predictions-path and label
         predictions_fp = os.path.join(
             config_cesm.PREDICTIONS_DIRECTORY, 
-            config_dict["EXPERIMENT_NAME"], 
+            config.experiment_name,
             "permute",
             f"permute_{args.permute_var}_predictions.nc"
         )
@@ -268,7 +268,7 @@ def main():
             assert os.path.exists(predictions_path)
             predictions = xr.open_dataset(predictions_path)["predictions"]
         else:
-            predictions = load_model_predictions(config_dict)
+            predictions = load_model_predictions(config)
         
         if args.label is not None:
             label = args.label
@@ -284,7 +284,7 @@ def main():
         )
 
     # mask out points that are always ice-free in the dataset
-    if config_dict["DATA_SPLIT_SETTINGS"]["member_ids"] == ["obs"]:
+    if config.data_split["member_ids"] == ["obs"]:
         data_source = "obs"
     else:
         data_source = "cesm"
@@ -293,7 +293,7 @@ def main():
     targets = targets.where(ice_mask == 1)
 
 
-    print(f"Computing diagnostics for {config_dict['EXPERIMENT_NAME']}")
+    print(f"Computing diagnostics for {config.experiment_name}")
 
     if args.overwrite or not os.path.exists(os.path.join(save_dir, f"acc{label}.nc")):
         print("Computing ACC...")
@@ -313,7 +313,7 @@ def main():
 
     if args.overwrite or not os.path.exists(os.path.join(save_dir, f"iiee{label}.nc")):
         print("Computing IIEE...")
-        iiee = calculate_iiee(predictions, targets, config_dict["DATA_SPLIT_SETTINGS"], config_dict["EXPERIMENT_NAME"])
+        iiee = calculate_iiee(predictions, targets, config.data_split, config.experiment_name)
         iiee_agg = aggregate_metric(iiee, dim=("x","y"))
         util_shared.write_nc_file(iiee.to_dataset(name="iiee"), os.path.join(save_dir, f"iiee{label}.nc"), overwrite=args.overwrite)
         util_shared.write_nc_file(iiee_agg.to_dataset(name="iiee"), os.path.join(save_dir, f"iiee{label}_agg.nc"), overwrite=args.overwrite)
@@ -321,7 +321,7 @@ def main():
 
     if args.baselines:
         print(f"Computing ACC, RMSE, and IIEE for persistence and climatology forecasts...")
-        persistence_pred = baselines.anomaly_persistence(config_dict["DATA_SPLIT_SETTINGS"], os.path.join(base_dir, "baselines"), overwrite=args.overwrite)
+        persistence_pred = baselines.anomaly_persistence(config.data_split, os.path.join(base_dir, "baselines"), overwrite=args.overwrite)
         persistence_pred = persistence_pred.where(ice_mask == 1)
         acc = calculate_acc(persistence_pred["predictions"], targets)
         acc_agg = aggregate_metric(acc, dim=("x","y"))
@@ -333,7 +333,7 @@ def main():
         util_shared.write_nc_file(rmse.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_persist.nc"), overwrite=args.overwrite)
         util_shared.write_nc_file(rmse_agg.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_agg_persist.nc"), overwrite=args.overwrite)
 
-        iiee = calculate_iiee(persistence_pred["predictions"], targets, config_dict["DATA_SPLIT_SETTINGS"], config_dict["EXPERIMENT_NAME"], save_abs=False)
+        iiee = calculate_iiee(persistence_pred["predictions"], targets, config.data_split, config.experiment_name, save_abs=False)
         iiee_agg = aggregate_metric(iiee, dim=("x","y"))
         util_shared.write_nc_file(iiee.to_dataset(name="iiee"), os.path.join(save_dir, f"iiee{label}_persist.nc"), overwrite=args.overwrite)
         util_shared.write_nc_file(iiee_agg.to_dataset(name="iiee"), os.path.join(save_dir, f"iiee{label}_agg_persist.nc"), overwrite=args.overwrite)
@@ -345,7 +345,7 @@ def main():
         util_shared.write_nc_file(rmse.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_climatology.nc"), overwrite=args.overwrite)
         util_shared.write_nc_file(rmse_agg.to_dataset(name="rmse"), os.path.join(save_dir, f"rmse{label}_agg_climatology.nc"), overwrite=args.overwrite)
 
-        iiee = calculate_iiee(climatology_pred, targets, config_dict["DATA_SPLIT_SETTINGS"], config_dict["EXPERIMENT_NAME"], save_abs=False)
+        iiee = calculate_iiee(climatology_pred, targets, config.data_split, config.experiment_name, save_abs=False)
         iiee_agg = aggregate_metric(iiee, dim=("x","y"))
         util_shared.write_nc_file(iiee.to_dataset(name="iiee"), os.path.join(save_dir, f"iiee{label}_climatology.nc"), overwrite=args.overwrite)
         util_shared.write_nc_file(iiee_agg.to_dataset(name="iiee"), os.path.join(save_dir, f"iiee{label}_agg_climatology.nc"), overwrite=args.overwrite)

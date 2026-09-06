@@ -32,15 +32,15 @@ def build_optimizer(config, model):
 
     Defaults to AdamW to match the existing training script.
     """
-    name = getattr(config, "OPTIMIZER", "adamw")
+    name = config.optimizer
     name = str(name).lower()
-    args = dict(getattr(config, "OPTIMIZER_ARGS", {}) or {})
+    args = dict(config.optimizer_args or {})
 
     if name == "adamw":
         return AdamW(
             model.parameters(),
-            lr=getattr(config, "LEARNING_RATE"),
-            weight_decay=getattr(config, "WEIGHT_DECAY", 0.0),
+            lr=config.learning_rate,
+            weight_decay=config.weight_decay,
             **args,
         )
 
@@ -80,7 +80,7 @@ def build_lr_scheduler(
 
     `global_step` is used to set `last_epoch` for step-based schedulers.
     """
-    name = getattr(config, "LR_SCHEDULER", None)
+    name = config.lr_scheduler
     if name is None:
         return None, None
 
@@ -88,7 +88,7 @@ def build_lr_scheduler(
     if name in {"constant", "none"}:
         return None, None
 
-    args = dict(getattr(config, "LR_SCHEDULER_ARGS", {}) or {})
+    args = dict(config.lr_scheduler_args or {})
 
     if name in {"cosine_with_warmup", "cosinewarmup", "warmup_cosine"}:
         total_steps = int(steps_per_epoch) * int(total_epochs)

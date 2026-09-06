@@ -36,6 +36,8 @@ There are three experiments, each of which can be run via a shell script:
 - Experiment 2 (`exp2_data_volume`): training data scaling experiment (Section 3.2)
 - Experiment 3 (`exp3_obs`): finetuning on observations (Section 3.3)
 
+Each concrete run is selected as `family:variant` from the shared family configuration. For example, `exp1_inputs:input3a` changes only the enabled predictor set and `exp2_data_volume:vol4` changes only the number of training ensemble members. The preprocessing, training, evaluation, and diagnostics commands all accept these selectors through `--config`.
+
 **Recommended resources**: In general, a GPU is recommended for training and evaluating models (especially training). 64 GB of RAM is recommended.
 
 To generate all results *including model training*, run (from the directory root):

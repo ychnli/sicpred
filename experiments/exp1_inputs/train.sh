@@ -8,9 +8,9 @@
 # A GPU is recommended for this script
 ###################################################################################
 
-python3 -m src.models.train --config src/experiment_configs/exp1_inputs/input2.py --members 5
-python3 -m src.models.train --config src/experiment_configs/exp1_inputs/input3a.py --members 5
-python3 -m src.models.train --config src/experiment_configs/exp1_inputs/input3b.py --members 5
-python3 -m src.models.train --config src/experiment_configs/exp1_inputs/input3c.py --members 5
-python3 -m src.models.train --config src/experiment_configs/exp1_inputs/input3d.py --members 5
-python3 -m src.models.train --config src/experiment_configs/exp1_inputs/input4.py --members 5
+python3 -m src.models.train --config exp1_inputs:input2 --members 5
+python3 -m src.models.train --config exp1_inputs:input3a --members 5
+python3 -m src.models.train --config exp1_inputs:input3b --members 5
+python3 -m src.models.train --config exp1_inputs:input3c --members 5
+python3 -m src.models.train --config exp1_inputs:input3d --members 5
+python3 -m src.models.train --config exp1_inputs:input4 --members 5
