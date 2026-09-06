@@ -1,4 +1,15 @@
-"""Evaluate a model after permuting one dynamically constructed input channel."""
+"""Evaluate saved checkpoints after permuting one dynamically constructed test-set input channel.
+
+Command-line usage:
+    --config SELECTOR          Required experiment configuration selector.
+    --var_name CHANNEL         Required input channel to permute (for example, sst_lag1).
+    --random_seed INTEGER      Optional seed for a reproducible permutation.
+    --overwrite                Replace an existing permutation-prediction output.
+
+Examples:
+    python -m src.models.permute_and_predict --config exp1_inputs:input4 --var_name z500_lag1 --random_seed 7
+    python -m src.models.permute_and_predict --config exp1_inputs:input3e --var_name z50_lag6 --overwrite
+"""
 
 import numpy as np
 import xarray as xr

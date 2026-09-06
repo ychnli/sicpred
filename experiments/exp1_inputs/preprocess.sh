@@ -14,3 +14,7 @@ python3 -m src.preprocessing.preprocess_cesm_data --config exp1_inputs:input3e
 python3 -m src.preprocessing.preprocess_cesm_data --config exp1_inputs:input3f
 python3 -m src.preprocessing.preprocess_cesm_data --config exp1_inputs:input3g
 python3 -m src.preprocessing.preprocess_cesm_data --config exp1_inputs:input4
+python3 -m src.preprocessing.preprocess_cesm_data --config exp1_inputs:input4a
+python3 -m src.preprocessing.preprocess_cesm_data --config exp1_inputs:input4b
+python3 -m src.preprocessing.preprocess_cesm_data --config exp1_inputs:input5
+python3 -m src.preprocessing.preprocess_cesm_data --config exp1_inputs:input5_noSIC

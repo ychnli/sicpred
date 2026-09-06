@@ -1,5 +1,7 @@
 """Tests for dynamic CESM model-sample construction."""
 
+from dataclasses import replace
+
 import numpy as np
 import pandas as pd
 import torch
@@ -143,3 +145,46 @@ def test_dataset_builds_lagged_inputs_and_targets_at_runtime(
     assert not (processed_dir / "data_pairs").exists()
 
     dataset._close_cache()
+
+    no_sic_input_config = {
+        **input_config,
+        "icefrac": {"include": False, "auxiliary": False, "lag": 2},
+    }
+    no_sic_dataset = CESM_Dataset(
+        "train", replace(config, input_config=no_sic_input_config)
+    )
+    no_sic_sample = no_sic_dataset[0]
+
+    assert no_sic_sample["input"].shape == torch.Size([4, 2, 3])
+    np.testing.assert_allclose(no_sic_sample["target"][0], 2)
+    no_sic_dataset._close_cache()
+
+
+def test_input_sample_can_exclude_icefrac():
+    times = pd.date_range("1999-12", "2000-01", freq="MS")
+    z500 = xr.DataArray(
+        np.ones((1, 2, 2, 3), dtype=np.float32),
+        dims=("member_id", "time", "y", "x"),
+        coords={
+            "member_id": ["member1"],
+            "time": times,
+            "y": np.arange(2),
+            "x": np.arange(3),
+        },
+    )
+    input_config = {
+        "icefrac": {"include": False, "auxiliary": False, "lag": 12},
+        "z500": {"include": True, "auxiliary": False, "lag": 1},
+        "land_mask": {"include": True, "auxiliary": True},
+    }
+
+    sample = util_cesm.build_input_sample(
+        {"z500": z500},
+        input_config,
+        "member1",
+        pd.Timestamp("2000-01"),
+        land_mask=np.zeros((2, 3), dtype=np.float32),
+    )
+
+    assert sample.channel.values.tolist() == ["z500_lag1", "land_mask"]
+    assert sample.shape == (2, 2, 3)

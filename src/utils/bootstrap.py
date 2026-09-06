@@ -1,6 +1,19 @@
-"""
-Compute bootstrap confidence intervals for change in metric (ACC or RMSE) between
-two models.
+"""Compute block-bootstrap confidence intervals for the difference in two models' ACC or RMSE diagnostics.
+
+Command-line usage:
+    --metric {acc,rmse}       Required metric to compare.
+    --config_a NAME           Required first prediction-directory/config name.
+    --config_b NAME           Required second prediction-directory/config name.
+    --transform {fisher_z,none}
+                              Optional metric transform before bootstrapping (default: none).
+    --n_bootstrap INTEGER     Number of bootstrap resamples (default: 5000).
+    --alpha FLOAT             Two-sided significance level for confidence intervals (default: 0.05).
+    --random_seed INTEGER     Optional seed for reproducible resampling.
+    --overwrite               Replace an existing confidence-interval output.
+
+Examples:
+    python -m src.utils.bootstrap --metric acc --config_a exp1_input2 --config_b exp1_input3a
+    python -m src.utils.bootstrap --metric rmse --config_a exp1_input3a --config_b exp1_input3e --transform fisher_z --n_bootstrap 10000 --random_seed 42 --overwrite
 """
 
 import numpy as np
@@ -142,9 +155,9 @@ def main():
     # if the predictions has this member id, drop it. We only want to bootstrap
     # over individual ensemble members, not the ensemble mean
     if "nn_member_id" in ds_a.dims:
-        ds_a = ds_a.where(ds_a["nn_member_id"] == -1, drop=True)
+        ds_a = ds_a.where(ds_a["nn_member_id"] != -1, drop=True)
     if "nn_member_id" in ds_b.dims:
-        ds_b = ds_b.where(ds_b["nn_member_id"] == -1, drop=True)
+        ds_b = ds_b.where(ds_b["nn_member_id"] != -1, drop=True)
 
 
     if args.transform == "fisher_z":

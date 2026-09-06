@@ -1,3 +1,17 @@
+"""Train configured CESM models from dynamically constructed samples.
+
+Command-line usage:
+    --config SELECTOR          Required experiment configuration selector.
+    --pretrained PATH           Optional checkpoint to load for fine-tuning; cannot be combined with --resume.
+    --members INTEGER           Number of independently initialized models to train (default: 1).
+    --start_ens_id INTEGER      Starting ensemble/checkpoint ID and seed offset (default: 0).
+    --resume INTEGER             Resume for this many additional epochs from the latest checkpoint (default: 0).
+
+Examples:
+    python -m src.models.train --config exp1_inputs:input3e
+    python -m src.models.train --config exp1_inputs:input4 --members 4 --start_ens_id 4
+"""
+
 import os
 import torch
 import pickle

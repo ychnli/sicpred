@@ -1,6 +1,11 @@
-"""
-This script normalizes CESM data according to the data split settings
-given by the desired configuration. 
+"""Normalize CESM inputs for a named experiment and prepare runtime-readable source data.
+
+Command-line usage:
+    --config SELECTOR          Required experiment configuration selector.
+    --overwrite                Regenerate existing normalized artifacts instead of skipping them.
+
+Example:
+    python -m src.preprocessing.preprocess_cesm_data --config exp1_inputs:input3e
 """
 
 import os 
@@ -42,11 +47,14 @@ def main():
     print("\n")
 
     for var_name in config.input_config.keys():
-        if config.input_config[var_name]['include'] and config.input_config[var_name]['norm']:
-            divide_by_stdev = config.input_config[var_name]['divide_by_stdev']
-            use_min_max = config.input_config[var_name]['use_min_max']
+        settings = config.input_config[var_name]
+        # icefrac is also the prediction target, so its normalized data is
+        # required even when it is intentionally excluded as a predictor.
+        if (settings['include'] or var_name == "icefrac") and settings['norm']:
+            divide_by_stdev = settings['divide_by_stdev']
+            use_min_max = settings['use_min_max']
             util_cesm.normalize_data(var_name, config.data_split,
-                                    max_lag_months=config.input_config[var_name]["lag"],
+                                    max_lag_months=settings["lag"],
                                     max_lead_months=config.max_lead_months,
                                     overwrite=args.overwrite, verbose=2, divide_by_stdev=divide_by_stdev, 
                                     use_min_max=use_min_max)

@@ -25,6 +25,10 @@ from src.experiment_configs import (
         ("exp1_inputs:input3f", "exp1_input3f", "seaice_plus_ohc200"),
         ("exp1_inputs:input3g", "exp1_input3g", "seaice_plus_icethick"),
         ("exp1_inputs:input4", "exp1_input4", "seaice_plus_all"),
+        ("exp1_inputs:input4a", "exp1_input4a", "seaice_plus_atmosphere"),
+        ("exp1_inputs:input4b", "exp1_input4b", "seaice_plus_ocean"),
+        ("exp1_inputs:input5", "exp1_input5", "seaice_plus_all_variables"),
+        ("exp1_inputs:input5_noSIC", "exp1_input5_noSIC", "all_inputs_no_sic"),
         ("exp2_data_volume:vol1", "exp2_vol1", "seaice_plus_auxiliary_vol1"),
         ("exp2_data_volume:vol4", "exp2_vol4", "seaice_plus_auxiliary_vol4"),
         ("exp3_obs:obs_input2", "obs_input2_ensemble", "seaice_plus_auxiliary_obs"),
@@ -41,25 +45,29 @@ def test_named_configs_preserve_output_identifiers(selector, experiment_name, da
 
 def test_input_variants_only_enable_their_named_predictors():
     expected = {
-        "input2": set(),
-        "input3a": {"sst"},
-        "input3b": {"psl"},
-        "input3c": {"z500"},
-        "input3d": {"t2m"},
-        "input3e": {"z50"},
-        "input3f": {"ohc200"},
-        "input3g": {"icethick"},
-        "input4": {"sst", "psl", "z500", "t2m"},
+        "input2": {"icefrac"},
+        "input3a": {"icefrac", "sst"},
+        "input3b": {"icefrac", "psl"},
+        "input3c": {"icefrac", "z500"},
+        "input3d": {"icefrac", "t2m"},
+        "input3e": {"icefrac", "z50"},
+        "input3f": {"icefrac", "ohc200"},
+        "input3g": {"icefrac", "icethick"},
+        "input4": {"icefrac", "sst", "z500", "psl", "t2m"},
+        "input4a": {"icefrac", "z500", "z50", "psl", "t2m"},
+        "input4b": {"icefrac", "sst", "ohc200"},
+        "input5": {"icefrac", "icethick", "sst", "ohc200", "z500", "z50", "psl", "t2m"},
+        "input5_noSIC": {"icethick", "sst", "ohc200", "z500", "z50", "psl", "t2m"},
     }
 
-    for variant, extra_inputs in expected.items():
+    for variant, expected_inputs in expected.items():
         config = load_config(f"exp1_inputs:{variant}")
         physical_inputs = {
             name
             for name, settings in config.input_config.items()
             if settings["include"] and not settings["auxiliary"]
         }
-        assert physical_inputs == {"icefrac", *extra_inputs}
+        assert physical_inputs == expected_inputs
 
 
 @pytest.mark.parametrize(

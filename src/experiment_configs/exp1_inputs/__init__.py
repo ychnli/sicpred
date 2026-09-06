@@ -13,11 +13,13 @@ _TARGET = {"predict_anom": True, "predict_classes": False}
 _TIME_RANGE = pd.date_range("1851-01", "2013-12", freq="MS")
 
 
-def _inputs(*additional_inputs: str) -> dict[str, dict]:
+def _inputs(*additional_inputs: str, include_icefrac: bool = True) -> dict[str, dict]:
     """Build the common input recipe with selected predictors enabled."""
-    enabled = {"icefrac", *additional_inputs}
+    enabled = {*additional_inputs}
+    if include_icefrac:
+        enabled.add("icefrac")
     inputs = {
-        "icefrac": {"include": True, "norm": True, "land_mask": True, "lag": 12,
+        "icefrac": {"include": include_icefrac, "norm": True, "land_mask": True, "lag": 12,
                     "divide_by_stdev": False, "auxiliary": False, "use_min_max": False},
         "icethick": {"include": "icethick" in enabled, "norm": True,
                      "land_mask": True, "lag": 6, "divide_by_stdev": False,
@@ -48,7 +50,8 @@ def _inputs(*additional_inputs: str) -> dict[str, dict]:
 
 
 def _active_config(variant: str, data_name: str, notes: str,
-                   *additional_inputs: str) -> ExperimentConfig:
+                   *additional_inputs: str,
+                   include_icefrac: bool = True) -> ExperimentConfig:
     split = ensemble_member_split(
         data_name,
         train=AVAILABLE_CESM_MEMBERS[0:8],
@@ -58,7 +61,10 @@ def _active_config(variant: str, data_name: str, notes: str,
     )
     return ExperimentConfig(
         experiment_name=f"exp1_{variant}", notes=notes, data_name=data_name,
-        data_split=split, input_config=_inputs(*additional_inputs),
+        data_split=split,
+        input_config=_inputs(
+            *additional_inputs, include_icefrac=include_icefrac
+        ),
         target_config=deepcopy(_TARGET),
         weight_decay=1e-3 if variant == "input2" else 5e-3,
     )
@@ -151,8 +157,25 @@ CONFIGS = {
         "icethick"),
     "input4": _active_config(
         "input4", "seaice_plus_all",
-        "Previous 12 months of sea ice + land mask and sin() and cos() of month      + 6 months of SST + atmospheric vars",
+        "Previous 12 months of sea ice + auxiliary inputs + 6 months of SST, z500, psl, and t2m",
         "sst", "z500", "psl", "t2m"),
+    "input4a": _active_config(
+        "input4a", "seaice_plus_atmosphere",
+        "Previous 12 months of sea ice + auxiliary inputs + 6 months of z500, z50, psl, and t2m",
+        "z500", "z50", "psl", "t2m"),
+    "input4b": _active_config(
+        "input4b", "seaice_plus_ocean",
+        "Previous 12 months of sea ice + auxiliary inputs + 6 months of SST and top-200-m ocean heat content",
+        "sst", "ohc200"),
+    "input5": _active_config(
+        "input5", "seaice_plus_all_variables",
+        "Previous 12 months of sea ice + auxiliary inputs + 6 months of every other physical variable",
+        "icethick", "sst", "ohc200", "z500", "z50", "psl", "t2m"),
+    "input5_noSIC": _active_config(
+        "input5_noSIC", "all_inputs_no_sic",
+        "Auxiliary inputs + 6 months of every physical variable except sea ice concentration",
+        "icethick", "sst", "ohc200", "z500", "z50", "psl", "t2m",
+        include_icefrac=False),
     "input3a_dev": _legacy_config(
         "input3a_dev", "seaice_plus_temp_dev",
         "Previous 12 months of sea ice + land mask and sin() and cos() of month + 6 months of SST",

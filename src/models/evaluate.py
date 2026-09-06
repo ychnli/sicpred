@@ -1,3 +1,19 @@
+"""Evaluate saved checkpoints on a configured split or zero-shot dataset.
+
+Command-line usage:
+    --config SELECTOR          Required configuration for the model/checkpoint.
+    --split SPLIT              Dataset split to evaluate (default: test).
+    --device {cuda,cpu}         Force the compute device; otherwise select automatically.
+    --batch-size INTEGER        Evaluation batch size (default: 12).
+    --num-workers INTEGER       DataLoader worker count (default: 4).
+    --zero-shot SELECTOR        Evaluate the model on another named dataset configuration.
+    --overwrite                Replace an existing prediction output.
+
+Examples:
+    python -m src.models.evaluate --config exp1_inputs:input3e --device cuda
+    python -m src.models.evaluate --config exp1_inputs:input3e --zero-shot exp3_obs:obs_input2 --split test
+"""
+
 import os
 import torch
 import numpy as np

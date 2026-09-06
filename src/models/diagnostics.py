@@ -1,3 +1,19 @@
+"""Compute ACC, RMSE, and IIEE diagnostics for a named experiment's predictions.
+
+Command-line usage:
+    --config SELECTOR          Required experiment configuration selector.
+    --overwrite                Recompute and replace existing diagnostic files.
+    --baselines                Also evaluate persistence and climatology baselines.
+    --ensemble-mean            Also evaluate the ensemble-mean prediction.
+    --predictions-path PATH    Use predictions from PATH instead of the configured checkpoint output.
+    --label LABEL              Add LABEL to diagnostic output filenames.
+    --permute-var CHANNEL      Read the corresponding permuted-prediction file and label outputs accordingly.
+
+Examples:
+    python -m src.models.diagnostics --config exp1_inputs:input3e
+    python -m src.models.diagnostics --config exp1_inputs:input4 --baselines --ensemble-mean --overwrite
+"""
+
 from operator import lt
 import xarray as xr
 import numpy as np 

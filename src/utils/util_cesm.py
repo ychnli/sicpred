@@ -304,9 +304,11 @@ def build_input_sample(data_da_dict, input_config, member_id,
                        start_prediction_month, land_mask=None):
     """Construct one model input from normalized time series."""
     start_prediction_month = pd.Timestamp(start_prediction_month)
-    icefrac = data_da_dict["icefrac"]
-    x_coords = icefrac.x.data
-    y_coords = icefrac.y.data
+    if not data_da_dict:
+        raise ValueError("At least one physical input variable must be enabled")
+    reference_input = next(iter(data_da_dict.values()))
+    x_coords = reference_input.x.data
+    y_coords = reference_input.y.data
     input_arrays = []
 
     for input_var, input_var_params in input_config.items():

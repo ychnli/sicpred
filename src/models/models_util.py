@@ -105,6 +105,7 @@ class CESM_Dataset(torch.utils.data.Dataset):
         if (
             self.config.target_config["predict_anom"]
             and self._input_data is not None
+            and "icefrac" in self._input_data
         ):
             self._target_data = self._input_data["icefrac"]
             return
