@@ -2,12 +2,13 @@
 #SBATCH --job-name=sicpred_input2_notrain
 #SBATCH --output=logs/sicpred_input2_notrain.%j.out
 #SBATCH --error=logs/sicpred_input2_notrain.%j.err
-#SBATCH --time=01:00:00
-#SBATCH --partition=serc
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64GB
+#SBATCH --time=03:00:00
+#SBATCH --partition=gpu
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=32GB
 #SBATCH --gpus=1
-#SBATCH --constraint=GPU_SKU:A100_SXM4|GPU_SKU:H100_SXM5
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=yuchenli713@gmail.com
 
 set -eo pipefail
 
@@ -17,4 +18,9 @@ conda activate sicpred_env_conda
 set -u
 cd /home/users/yucli/sicpred
 
-bash experiments/exp1_inputs/run_all_notrain.sh
+python3 -m src.models.evaluate --config exp1_inputs:input3c
+python3 -m src.models.evaluate --config exp1_inputs:input3d
+python3 -m src.models.evaluate --config exp1_inputs:input4
+
+bash experiments/exp1_inputs/diagnostics.sh
+bash experiments/exp1_inputs/permute_and_predict.sh

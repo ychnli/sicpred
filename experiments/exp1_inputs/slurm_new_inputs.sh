@@ -1,11 +1,11 @@
 #!/usr/bin/bash
-#SBATCH --job-name=sicpred_new_inputs
+#SBATCH --job-name=sicnwin
 #SBATCH --output=logs/sicpred_new_inputs.%A_%a.out
 #SBATCH --error=logs/sicpred_new_inputs.%A_%a.err
 #SBATCH --time=05:00:00
 #SBATCH --partition=serc
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64GB
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=16GB
 #SBATCH --gpus=1
 #SBATCH --constraint=GPU_SKU:A100_SXM4|GPU_SKU:H100_SXM5
 #SBATCH --array=0-6
