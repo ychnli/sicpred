@@ -1,4 +1,4 @@
-"""Train configured CESM models from dynamically constructed samples.
+"""Train configured CESM models from precomputed input-target pairs.
 
 Command-line usage:
     --config SELECTOR          Required experiment configuration selector.

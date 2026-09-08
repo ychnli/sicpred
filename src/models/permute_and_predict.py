@@ -1,4 +1,4 @@
-"""Evaluate saved checkpoints after permuting one dynamically constructed test-set input channel.
+"""Evaluate saved checkpoints after permuting one precomputed test-set input channel.
 
 Command-line usage:
     --config SELECTOR          Required experiment configuration selector.

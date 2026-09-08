@@ -1,6 +1,4 @@
-"""Tests for dynamic CESM model-sample construction."""
-
-from dataclasses import replace
+"""Tests for precomputed CESM model-sample loading and pair construction."""
 
 import numpy as np
 import pandas as pd
@@ -13,88 +11,8 @@ from src.models.models_util import CESM_Dataset
 from src.utils import util_cesm
 
 
-def _write_normalized_field(path, name, values, members, times):
-    da = xr.DataArray(
-        values,
-        dims=("member_id", "time", "y", "x"),
-        coords={
-            "member_id": members,
-            "time": times,
-            "month": ("time", times.month),
-            "y": np.arange(values.shape[-2]),
-            "x": np.arange(values.shape[-1]),
-        },
-        name=name,
-    )
-    da.to_dataset().to_netcdf(path)
-
-
-def test_dataset_builds_lagged_inputs_and_targets_at_runtime(
-    monkeypatch, tmp_path
-):
-    processed_dir = tmp_path / "processed"
-    normalized_dir = processed_dir / "normalized_inputs" / "synthetic"
-    normalized_dir.mkdir(parents=True)
-    land_mask_path = tmp_path / "land_mask.nc"
-
-    members = ["member1", "member2", "member3"]
-    times = pd.date_range("1999-11", "2000-03", freq="MS")
-    shape = (len(members), len(times), 2, 3)
-    time_values = np.arange(len(times), dtype=np.float32)[None, :, None, None]
-    member_values = 100 * np.arange(len(members), dtype=np.float32)[:, None, None, None]
-    icefrac = np.broadcast_to(time_values + member_values, shape).copy()
-    z500 = icefrac + 10
-
-    _write_normalized_field(
-        normalized_dir / "icefrac_norm.nc",
-        "icefrac",
-        icefrac,
-        members,
-        times,
-    )
-    _write_normalized_field(
-        normalized_dir / "z500_norm.nc",
-        "z500",
-        z500,
-        members,
-        times,
-    )
-    land_mask = np.arange(6, dtype=np.float32).reshape(2, 3)
-    xr.Dataset(
-        {"mask": (("y", "x"), land_mask)},
-        coords={"y": np.arange(2), "x": np.arange(3)},
-    ).to_netcdf(land_mask_path)
-
-    monkeypatch.setattr(
-        config_cesm, "PROCESSED_DATA_DIRECTORY", str(processed_dir)
-    )
-    monkeypatch.setattr(util_cesm, "LAND_MASK_PATH", str(land_mask_path))
-
-    input_config = {
-        "icefrac": {
-            "include": True,
-            "auxiliary": False,
-            "lag": 2,
-        },
-        "z500": {
-            "include": True,
-            "auxiliary": False,
-            "lag": 1,
-        },
-        "cosine_of_init_month": {
-            "include": True,
-            "auxiliary": True,
-        },
-        "sine_of_init_month": {
-            "include": True,
-            "auxiliary": True,
-        },
-        "land_mask": {
-            "include": True,
-            "auxiliary": True,
-        },
-    }
-    config = ExperimentConfig(
+def _config(input_config):
+    return ExperimentConfig(
         experiment_name="synthetic",
         notes="",
         data_name="synthetic",
@@ -110,81 +28,102 @@ def test_dataset_builds_lagged_inputs_and_targets_at_runtime(
         max_lead_months=2,
     )
 
-    dataset = CESM_Dataset("train", config)
+
+def test_dataset_loads_precomputed_pairs(monkeypatch, tmp_path):
+    pair_dir = tmp_path / "data_pairs" / "synthetic"
+    pair_dir.mkdir(parents=True)
+    months = pd.date_range("2000-01", "2000-02", freq="MS")
+
+    for member_index, member in enumerate(("member1", "member2", "member3")):
+        inputs = np.full((2, 4, 2, 3), member_index, dtype=np.float32)
+        targets = np.full((2, 2, 2, 3), member_index + 10, dtype=np.float32)
+        xr.Dataset(
+            {"data": (("start_prediction_month", "channel", "y", "x"), inputs)},
+            coords={"start_prediction_month": months},
+        ).to_netcdf(pair_dir / f"inputs_member_{member}.nc")
+        xr.Dataset(
+            {"data": (("start_prediction_month", "lead_time", "y", "x"), targets)},
+            coords={"start_prediction_month": months, "lead_time": [1, 2]},
+        ).to_netcdf(pair_dir / f"targets_member_{member}.nc")
+
+    monkeypatch.setattr(
+        config_cesm, "PROCESSED_DATA_DIRECTORY", str(tmp_path)
+    )
+    input_config = {
+        "icefrac": {"include": True, "auxiliary": False, "lag": 2},
+        "cosine_of_init_month": {"include": True, "auxiliary": True},
+        "land_mask": {"include": True, "auxiliary": True},
+    }
+    dataset = CESM_Dataset("train", _config(input_config))
     sample = dataset[0]
-    input_da = dataset.input_data_array("member1", pd.Timestamp("2000-01"))
 
     assert len(dataset) == 2
-    assert input_da.channel.values.tolist() == [
-        "icefrac_lag2",
-        "icefrac_lag1",
-        "z500_lag1",
-        "cosine_of_init_month",
-        "sine_of_init_month",
-        "land_mask",
-    ]
-    assert sample["input"].shape == torch.Size([6, 2, 3])
+    assert sample["input"].shape == torch.Size([4, 2, 3])
     assert sample["target"].shape == torch.Size([2, 2, 3])
-    np.testing.assert_allclose(sample["input"][0], 0)
-    np.testing.assert_allclose(sample["input"][1], 1)
-    np.testing.assert_allclose(sample["input"][2], 11)
-    np.testing.assert_allclose(
-        sample["input"][3], np.cos(2 * np.pi / 12)
-    )
-    np.testing.assert_allclose(
-        sample["input"][4], np.sin(2 * np.pi / 12)
-    )
-    np.testing.assert_allclose(sample["input"][5], land_mask)
-    np.testing.assert_allclose(sample["target"][0], 2)
-    np.testing.assert_allclose(sample["target"][1], 3)
+    np.testing.assert_allclose(sample["input"], 0)
+    np.testing.assert_allclose(sample["target"], 10)
     np.testing.assert_array_equal(
         sample["start_prediction_month"],
         np.array([[2000, 1], [2000, 2]]),
     )
     assert sample["member_id"] == "member1"
-    assert not (processed_dir / "data_pairs").exists()
+    assert dataset.target_data_array("member1", months[1]).shape == (2, 2, 3)
 
-    dataset._close_cache()
 
-    no_sic_input_config = {
-        **input_config,
-        "icefrac": {"include": False, "auxiliary": False, "lag": 2},
-    }
-    no_sic_dataset = CESM_Dataset(
-        "train", replace(config, input_config=no_sic_input_config)
+def test_precomputed_pairs_support_no_sic_inputs(monkeypatch, tmp_path):
+    processed_dir = tmp_path / "processed"
+    normalized_dir = processed_dir / "normalized_inputs" / "synthetic"
+    normalized_dir.mkdir(parents=True)
+    pair_dir = processed_dir / "data_pairs" / "synthetic"
+    land_mask_path = tmp_path / "land_mask.nc"
+
+    members = ["member1", "member2", "member3"]
+    times = pd.date_range("1999-12", "2000-03", freq="MS")
+    shape = (len(members), len(times), 2, 3)
+    time_values = np.arange(len(times), dtype=np.float32)[None, :, None, None]
+    values = np.broadcast_to(time_values, shape).copy()
+    for name, offset in (("icefrac", 0), ("z500", 10)):
+        xr.DataArray(
+            values + offset,
+            dims=("member_id", "time", "y", "x"),
+            coords={
+                "member_id": members,
+                "time": times,
+                "month": ("time", times.month),
+                "y": np.arange(2),
+                "x": np.arange(3),
+            },
+            name=name,
+        ).to_dataset().to_netcdf(normalized_dir / f"{name}_norm.nc")
+    xr.Dataset(
+        {"mask": (("y", "x"), np.zeros((2, 3), dtype=np.float32))}
+    ).to_netcdf(land_mask_path)
+
+    monkeypatch.setattr(
+        config_cesm, "PROCESSED_DATA_DIRECTORY", str(processed_dir)
     )
-    no_sic_sample = no_sic_dataset[0]
-
-    assert no_sic_sample["input"].shape == torch.Size([4, 2, 3])
-    np.testing.assert_allclose(no_sic_sample["target"][0], 2)
-    no_sic_dataset._close_cache()
-
-
-def test_input_sample_can_exclude_icefrac():
-    times = pd.date_range("1999-12", "2000-01", freq="MS")
-    z500 = xr.DataArray(
-        np.ones((1, 2, 2, 3), dtype=np.float32),
-        dims=("member_id", "time", "y", "x"),
-        coords={
-            "member_id": ["member1"],
-            "time": times,
-            "y": np.arange(2),
-            "x": np.arange(3),
-        },
+    monkeypatch.setattr(
+        util_cesm.config, "PROCESSED_DATA_DIRECTORY", str(processed_dir)
     )
+    monkeypatch.setattr(util_cesm, "LAND_MASK_PATH", str(land_mask_path))
     input_config = {
         "icefrac": {"include": False, "auxiliary": False, "lag": 12},
         "z500": {"include": True, "auxiliary": False, "lag": 1},
         "land_mask": {"include": True, "auxiliary": True},
     }
+    config = _config(input_config)
 
-    sample = util_cesm.build_input_sample(
-        {"z500": z500},
-        input_config,
-        "member1",
-        pd.Timestamp("2000-01"),
-        land_mask=np.zeros((2, 3), dtype=np.float32),
+    util_cesm.save_inputs_files(input_config, str(pair_dir), config.data_split)
+    util_cesm.save_targets_files(
+        config.target_config,
+        str(pair_dir),
+        config.max_lead_months,
+        config.data_split,
     )
+    sample = CESM_Dataset("train", config)[0]
 
-    assert sample.channel.values.tolist() == ["z500_lag1", "land_mask"]
-    assert sample.shape == (2, 2, 3)
+    assert sample["input"].shape == torch.Size([2, 2, 3])
+    assert sample["target"].shape == torch.Size([2, 2, 3])
+    np.testing.assert_allclose(sample["input"][0], 10)
+    np.testing.assert_allclose(sample["target"][0], 1)
+    np.testing.assert_allclose(sample["target"][1], 2)

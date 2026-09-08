@@ -391,6 +391,135 @@ def build_target_sample(target_da, member_id, start_prediction_month,
     return target_data.transpose("lead_time", "y", "x")
 
 
+
+def _drop_scalar_vertical_dimensions(data_array):
+    """Remove scalar depth/pressure dimensions from a model-ready sample array."""
+    for dimension in ("z_t", "lev"):
+        if dimension not in data_array.dims:
+            continue
+        if data_array.sizes[dimension] != 1:
+            raise ValueError(
+                f"Input dimension {dimension!r} must be scalar, got "
+                f"{data_array.sizes[dimension]} values"
+            )
+        data_array = data_array.isel({dimension: 0}, drop=True)
+    return data_array
+
+
+def save_inputs_files(input_config, save_path, data_split_settings,
+                       overwrite=False):
+    """Write model-ready inputs to one NetCDF file per ensemble member."""
+    os.makedirs(save_path, exist_ok=True)
+    data_da_dict = load_inputs_data_da_dict(input_config, data_split_settings)
+    if not data_da_dict:
+        raise ValueError("At least one physical input variable must be enabled")
+
+    reference_input = next(iter(data_da_dict.values()))
+    member_ids = reference_input.member_id.values
+    start_prediction_months = get_start_prediction_months(data_split_settings)
+    with xr.open_dataset(LAND_MASK_PATH) as land_mask_ds:
+        land_mask = land_mask_ds["mask"].values
+
+    try:
+        for member_id in member_ids:
+            save_name = os.path.join(
+                save_path, f"inputs_member_{member_id}.nc"
+            )
+            if os.path.exists(save_name) and not overwrite:
+                continue
+
+            print(f"Constructing model-ready inputs for member {member_id}...")
+            samples = [
+                build_input_sample(
+                    data_da_dict,
+                    input_config,
+                    member_id,
+                    start_prediction_month,
+                    land_mask=land_mask,
+                )
+                for start_prediction_month in start_prediction_months
+            ]
+            merged = xr.concat(
+                samples,
+                dim="start_prediction_month",
+                coords="minimal",
+                compat="override",
+            )
+            merged = _drop_scalar_vertical_dimensions(merged)
+            merged = merged.chunk(
+                {"start_prediction_month": 12, "channel": -1}
+            )
+            write_nc_file(
+                merged.to_dataset(name="data"), save_name, overwrite
+            )
+    finally:
+        for data_array in data_da_dict.values():
+            close = getattr(data_array, "close", None)
+            if close is not None:
+                close()
+
+
+def save_targets_files(target_config, save_path, max_lead_months,
+                       data_split_settings, overwrite=False):
+    """Write model-ready SIC targets to one NetCDF file per ensemble member."""
+    os.makedirs(save_path, exist_ok=True)
+    if target_config["predict_anom"]:
+        target_path = os.path.join(
+            config.PROCESSED_DATA_DIRECTORY,
+            "normalized_inputs",
+            data_split_settings["name"],
+            "icefrac_norm.nc",
+        )
+    elif data_split_settings["member_ids"] == ["obs"]:
+        target_path = os.path.join(
+            config.DATA_DIRECTORY, "obs_data", "icefrac_obs.nc"
+        )
+    else:
+        target_path = os.path.join(
+            config.DATA_DIRECTORY,
+            "cesm_data",
+            "icefrac",
+            "icefrac_combined.nc",
+        )
+
+    with xr.open_dataset(target_path, chunks={"member_id": 1}) as target_ds:
+        target_da = target_ds["icefrac"]
+        if "month" in target_da.coords:
+            target_da = target_da.drop_vars("month")
+        member_ids = target_da.member_id.values
+        start_prediction_months = get_start_prediction_months(
+            data_split_settings
+        )
+
+        for member_id in member_ids:
+            save_name = os.path.join(
+                save_path, f"targets_member_{member_id}.nc"
+            )
+            if os.path.exists(save_name) and not overwrite:
+                continue
+
+            print(f"Constructing model-ready targets for member {member_id}...")
+            samples = [
+                build_target_sample(
+                    target_da,
+                    member_id,
+                    start_prediction_month,
+                    max_lead_months,
+                )
+                for start_prediction_month in start_prediction_months
+            ]
+            merged = xr.concat(
+                samples,
+                dim="start_prediction_month",
+                coords="minimal",
+                compat="override",
+            ).chunk({"start_prediction_month": 12, "lead_time": -1})
+            write_nc_file(
+                merged.to_dataset(name="data"), save_name, overwrite
+            )
+
+
+
 def get_num_input_channels(input_config):
     """
     Get the number of input channels from the input_config dict. 

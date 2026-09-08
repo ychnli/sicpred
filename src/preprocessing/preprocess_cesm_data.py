@@ -1,4 +1,4 @@
-"""Normalize CESM inputs for a named experiment and prepare runtime-readable source data.
+"""Normalize CESM inputs and construct model-ready input-target pairs.
 
 Command-line usage:
     --config SELECTOR          Required experiment configuration selector.
@@ -37,6 +37,10 @@ def main():
 
     # create directories for saving processed data
     os.makedirs(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", config.data_name), exist_ok=True)
+    data_pairs_dir = os.path.join(
+        config_cesm.PROCESSED_DATA_DIRECTORY, "data_pairs", config.data_name
+    )
+    os.makedirs(data_pairs_dir, exist_ok=True)
 
     # merge downloaded data, if not already
     util_cesm.merge_data_by_member()
@@ -75,6 +79,16 @@ def main():
         with open(month_weights_fp, "wb") as f:
             pickle.dump(month_weights, f)
         print("done! \n\n")
+
+    print("Constructing model-ready input-target pairs... \n")
+    util_cesm.save_inputs_files(
+        config.input_config, data_pairs_dir, config.data_split,
+        overwrite=args.overwrite,
+    )
+    util_cesm.save_targets_files(
+        config.target_config, data_pairs_dir, config.max_lead_months,
+        config.data_split, overwrite=args.overwrite,
+    )
 
     print("all done! \n\n")
 
