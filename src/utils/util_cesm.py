@@ -20,38 +20,73 @@ def normalize(x, m, s):
     return normalized
 
 
-def detrend_quadratic(da, time_dim='time'):
+def detrend_quadratic(da, time_dim='time', fit_da=None):
+    """Remove monthly quadratic trends, optionally fitting on a data subset.
+
+    ``fit_da`` must use the same spatial grid as ``da``. Its time and member
+    coordinates may be subsets, allowing trends to be estimated from training
+    data and then applied to validation and test data without refitting.
+    """
+    if fit_da is None:
+        fit_da = da
+
     time_vals = da[time_dim].dt.year + da[time_dim].dt.month / 12.0
     time_numeric = xr.DataArray(time_vals, coords={time_dim: da[time_dim]}, dims=time_dim)
 
+    fit_time_vals = fit_da[time_dim].dt.year + fit_da[time_dim].dt.month / 12.0
+    fit_time_numeric = xr.DataArray(
+        fit_time_vals, coords={time_dim: fit_da[time_dim]}, dims=time_dim
+    )
+
     spatial_dims = [d for d in da.dims if d not in [time_dim, 'member_id']]
     da_stacked = da.stack(space=spatial_dims)
+    fit_da_stacked = fit_da.stack(space=spatial_dims)
     detrended = da_stacked.copy()
 
     coeffs_all = []
 
     for month in range(1, 13):
         sel = da_stacked[time_dim].dt.month == month
-        if not sel.any(): continue
+        if not sel.any():
+            continue
 
-        t = time_numeric.sel({time_dim: sel})
-        Y = da_stacked.sel({time_dim: sel})
-        if "member_id" in Y.dims:
-            Y = Y.mean('member_id')
-        X = np.stack([np.ones_like(t), t, t**2], axis=1)
+        fit_sel = fit_da_stacked[time_dim].dt.month == month
+        if not fit_sel.any():
+            raise ValueError(f"No detrending fit data found for month {month}")
 
-        beta = np.linalg.solve(X.T @ X, X.T @ Y.values)  # (3, space)
+        fit_t = fit_time_numeric.sel({time_dim: fit_sel})
+        fit_values = fit_da_stacked.sel({time_dim: fit_sel})
+        if "member_id" in fit_values.dims:
+            fit_values = fit_values.mean('member_id')
+        fit_design = np.stack(
+            [np.ones_like(fit_t), fit_t, fit_t**2], axis=1
+        )
+
+        beta = np.linalg.solve(
+            fit_design.T @ fit_design, fit_design.T @ fit_values.values
+        )
         coeffs_all.append((month, beta))
 
-        trend = xr.DataArray((X @ beta).astype(Y.dtype), coords=Y.coords, dims=Y.dims)
-        detrended.loc[{time_dim: sel}] = da_stacked.sel({time_dim: sel}) - trend
+        t = time_numeric.sel({time_dim: sel})
+        design = np.stack([np.ones_like(t), t, t**2], axis=1)
+        trend = xr.DataArray(
+            (design @ beta).astype(fit_values.dtype),
+            coords={
+                time_dim: da_stacked[time_dim].sel({time_dim: sel}),
+                'space': da_stacked.coords['space'],
+            },
+            dims=(time_dim, 'space'),
+        )
+        detrended.loc[{time_dim: sel}] = (
+            da_stacked.sel({time_dim: sel}) - trend
+        )
 
     detrended_unstacked = detrended.unstack('space')
 
     # Build coeff DataArray
     coeffs = np.full((12, 3) + (da_stacked.sizes['space'],), np.nan, dtype=da.dtype)
     for month, beta in coeffs_all:
-        coeffs[month - 1] = beta 
+        coeffs[month - 1] = beta
 
     coeff_da = xr.DataArray(
         coeffs,
@@ -228,7 +263,15 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
 
     if detrend:
         print("detrending data with quadratic fit...", end=" ")
-        normalized_da, coeffs = detrend_quadratic(normalized_da)
+        if data_split_settings["split_by"] == "time":
+            detrending_fit_da = normalized_da.sel(time=data_split_settings["train"])
+        else:
+            detrending_fit_da = normalized_da.sel(
+                member_id=data_split_settings["train"]
+            )
+        normalized_da, coeffs = detrend_quadratic(
+            normalized_da, fit_da=detrending_fit_da
+        )
         write_nc_file(coeffs.to_dataset(name=var_name), 
                       os.path.join(save_dir, f"{var_name}_detrend_coeffs.nc"), overwrite)
         print("done!")
