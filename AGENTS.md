@@ -1,5 +1,8 @@
 # Repository Guidelines
 
+## Collaboration guidelines
+
+
 ## Project Structure & Module Organization
 
 Core Python code lives in `src/`. Data acquisition and preprocessing are under `src/download/` and `src/preprocessing/`; model definitions, training, evaluation, losses, and diagnostics are in `src/models/`; shared helpers are in `src/utils/`. Experiment-specific Python settings live in `src/experiment_configs/<experiment>/`.
@@ -21,17 +24,35 @@ Use four-space indentation and standard Python conventions: `snake_case` for mod
 
 ## Testing Guidelines
 
-No automated test framework or coverage threshold is configured. For model or preprocessing changes, run `python -m compileall src` plus the smallest relevant experiment stage (`preprocess.sh`, `evaluate.sh`, or `diagnostics.sh`). If adding tests, use `pytest`, place them in `tests/`, and name files `test_<module>.py`. Document any required datasets, checkpoints, GPU, or long runtime in the pull request.
+No automated test framework or coverage threshold is configured. For model or preprocessing changes, run `python -m compileall src` plus the smallest relevant experiment stage (`preprocess.sh`, `evaluate.sh`, or `diagnostics.sh`). If adding tests, use `pytest`, place them in `tests/`, and name files `test_<module>.py`. 
 
-## Sherlock Patch Fallback
+It can often be more helpful 
 
-On the Sherlock cluster, the sandboxed patch helper can occasionally fail with a namespace-exhaustion error. Confirm that the session is on Sherlock with:
+## Sherlock-specific guidelines
+Most development of this codebase happens on the Stanford Sherlock cluster. Here are important things to keep in mind about this machine:
+
+### Sandbox patch helper
+On the Sherlock cluster, the sandboxed patch helper will fail with a namespace-exhaustion error. Confirm that the session is on Sherlock with:
 
 ```bash
 [[ "${SLURM_CLUSTER_NAME:-}" == "sherlock" ]] || hostname -f | grep -q "\.sherlock\.stanford\.edu$"
 ```
 
 If that command succeeds and `apply_patch` is unavailable, use this minimal fallback for a targeted edit: copy the current file to `/tmp`, edit only the copy, inspect the generated unified diff, run `git apply --check` on that diff, then apply it with `git apply`. Always diff against the current working-tree file (not `HEAD`) so existing user edits are preserved. Do not use this fallback outside Sherlock or for broad/mechanical rewrites.
+
+### Job dispatching
+Sherlock uses the slurm scheduler. Queue CPU jobs for data downloading and preprocessing, and GPU jobs for model training and inference (calculating model diagnostics and bootstrap confidence intervals is also fine to include in these jobs, as they do not take much time). When running a batch of experiments in parallel, use array jobs to dispatch compute for each experiment. 
+
+### GPU usage
+The serc partition has 3 GPU types (V100, A100, and H100); prefer A100 and H100 if available for model training and inference. The gpu partition has more available, including consumer-grade GPUs, but is exposed to more users; use the gpu partition only if serc GPUs are unavailable. Unless you are given explicit permission, do not launch GPU jobs.
+
+## Scientific and performance invariants
+
+Changes to preprocessing, Dataset/DataLoader code, normalization, splitting, or target construction are high-risk.
+
+Before implementing substantial changes to dataloaders or processing, inspect the existing data layout and Dask/xarray chunks. Avoid repeated xarray selections, pandas construction, concatenation, rechunking, or eager `.values` calls in per-sample hot paths unless benchmark evidence shows they are inexpensive. 
+
+Preserve numerical equivalence with the previous pipeline where semantics are intended to remain unchanged.
 
 ## Configuration, Commits, and Pull Requests
 
