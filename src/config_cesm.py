@@ -18,6 +18,7 @@ ALL_VAR_NAMES = [
     "icethick",
     "sst", 
     "ohc200", 
+    "to500",
     "psl",
     "z500",
     "z50", 

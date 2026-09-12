@@ -26,7 +26,7 @@ from src.utils import util_shared
 from src.experiment_configs import load_config
 from src import config_cesm
 from src.models import baselines
-from src.models.models_util import CESM_Dataset
+from src.models.models_util import load_cesm_targets_data_array
 
 REFERENCE_GRID = util_cesm.generate_sps_grid()
 AREA_WEIGHTS = util_cesm.calculate_area_weights()
@@ -51,27 +51,11 @@ def load_model_predictions(config):
     return predictions 
 
 
-def load_targets(config, split):
-    ensemble_members, time_coords = get_ensemble_members_and_time_coords(
-        config.data_split, split
+def load_targets(config, split, *, data_source="dynamic"):
+    """Load labeled targets eagerly, without reopening a file per sample."""
+    return load_cesm_targets_data_array(
+        split, config, data_source=data_source
     )
-    dataset = CESM_Dataset(split, config)
-    member_arrays = []
-    for member_id in ensemble_members:
-        time_arrays = [
-            dataset.target_data_array(member_id, start_prediction_month)
-            for start_prediction_month in time_coords
-        ]
-        member_arrays.append(
-            xr.concat(time_arrays, dim="start_prediction_month")
-        )
-
-    targets = xr.concat(member_arrays, dim="member_id").assign_coords(
-        member_id=ensemble_members
-    )
-    return targets.transpose(
-        "start_prediction_month", "member_id", "lead_time", "y", "x"
-    ).load()
 
 
 def calculate_acc(pred_anom, truth_anom, aggregate=False, dim=("x","y")):
@@ -267,6 +251,12 @@ def main():
     parser.add_argument("--predictions-path", type=str, default=None, help='Set this if you want to evaluate a checkpoint that is not the one specified in the config file')
     parser.add_argument("--label", type=str, default=None, help='Diagnostics will be saved as {diag}{label}_...')
     parser.add_argument("--permute-var", type=str, default=None, help="If set, permute the specified variable before computing diagnostics.")
+    parser.add_argument(
+        "--data-source",
+        choices=("dynamic", "precomputed"),
+        default="dynamic",
+        help="Load targets from normalized fields (default) or legacy pair files.",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -275,7 +265,7 @@ def main():
     predictions_path = args.predictions_path
     os.makedirs(save_dir, exist_ok=True)
 
-    targets = load_targets(config, split="test")
+    targets = load_targets(config, split="test", data_source=args.data_source)
 
     if args.permute_var is not None:
         # TODO: remove the permute-var flag and merge this logic into using just predictions-path and label

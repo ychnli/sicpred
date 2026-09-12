@@ -1,4 +1,4 @@
-"""Evaluate saved checkpoints after permuting one precomputed test-set input channel.
+"""Evaluate checkpoints after permuting one test-set input channel.
 
 Command-line usage:
     --config SELECTOR          Required experiment configuration selector.
@@ -25,7 +25,10 @@ from src.models.models import UNetRes3
 from src.experiment_configs import load_config
 from src.utils.util_shared import write_nc_file
 from src.models.evaluate import nn_ens_members
-from src.models.models_util import CESM_Dataset
+from src.models.models_util import (
+    EagerCESMDataStore,
+    build_cesm_dataset,
+)
 
 def permute_ds(
     ds: xr.Dataset, 
@@ -66,6 +69,12 @@ def main():
         help="Random seed for permutation",
     )
     parser.add_argument("--overwrite", action="store_true", help="If set, overwrite existing output files.")
+    parser.add_argument(
+        "--data-source",
+        choices=("dynamic", "precomputed"),
+        default="dynamic",
+        help="Construct samples from eager normalized fields (default) or legacy pair files.",
+    )
     args = parser.parse_args()
     config = load_config(args.config)
 
@@ -79,7 +88,19 @@ def main():
     num_members = len(ensemble_members)
     channels, x_dim, y_dim = config.max_lead_months, 80, 80
     reference_grid = util_cesm.generate_sps_grid()
-    test_dataset = CESM_Dataset("test", config)
+    if args.data_source == "dynamic":
+        data_store = EagerCESMDataStore(
+            config, splits=("test",), include_targets=False
+        )
+    else:
+        data_store = None
+    test_dataset = build_cesm_dataset(
+        "test",
+        config,
+        data_source=args.data_source,
+        store=data_store,
+        include_targets=False,
+    )
     permutation_indices = {}
     for member_id in ensemble_members:
         rng = np.random.default_rng(args.random_seed)

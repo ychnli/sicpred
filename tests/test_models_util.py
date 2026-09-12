@@ -7,7 +7,7 @@ import xarray as xr
 
 from src import config_cesm
 from src.experiment_configs import ExperimentConfig, ensemble_member_split
-from src.models.models_util import CESM_Dataset
+from src.models.models_util import CESM_Dataset, EagerDynamicCESMDataset
 from src.utils import util_cesm
 
 
@@ -121,9 +121,16 @@ def test_precomputed_pairs_support_no_sic_inputs(monkeypatch, tmp_path):
         config.data_split,
     )
     sample = CESM_Dataset("train", config)[0]
+    dynamic_sample = EagerDynamicCESMDataset("train", config)[0]
 
     assert sample["input"].shape == torch.Size([2, 2, 3])
     assert sample["target"].shape == torch.Size([2, 2, 3])
     np.testing.assert_allclose(sample["input"][0], 10)
     np.testing.assert_allclose(sample["target"][0], 1)
     np.testing.assert_allclose(sample["target"][1], 2)
+    torch.testing.assert_close(
+        dynamic_sample["input"], sample["input"], rtol=0, atol=0
+    )
+    torch.testing.assert_close(
+        dynamic_sample["target"], sample["target"], rtol=0, atol=0
+    )

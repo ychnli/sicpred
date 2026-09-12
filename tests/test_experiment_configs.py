@@ -24,6 +24,7 @@ from src.experiment_configs import (
         ("exp1_inputs:input3e", "exp1_input3e", "seaice_plus_z50"),
         ("exp1_inputs:input3f", "exp1_input3f", "seaice_plus_ohc200"),
         ("exp1_inputs:input3g", "exp1_input3g", "seaice_plus_icethick"),
+        ("exp1_inputs:input3h_to500", "exp1_input3h_to500", "seaice_plus_to500"),
         ("exp1_inputs:input4", "exp1_input4", "seaice_plus_all"),
         ("exp1_inputs:input4a", "exp1_input4a", "seaice_plus_atmosphere"),
         ("exp1_inputs:input4b", "exp1_input4b", "seaice_plus_ocean"),
@@ -53,9 +54,10 @@ def test_input_variants_only_enable_their_named_predictors():
         "input3e": {"icefrac", "z50"},
         "input3f": {"icefrac", "ohc200"},
         "input3g": {"icefrac", "icethick"},
+        "input3h_to500": {"icefrac", "to500"},
         "input4": {"icefrac", "sst", "z500", "psl", "t2m"},
         "input4a": {"icefrac", "z500", "z50", "psl", "t2m"},
-        "input4b": {"icefrac", "sst", "ohc200"},
+        "input4b": {"icefrac", "sst", "ohc200", "to500"},
         "input5": {"icefrac", "icethick", "sst", "ohc200", "z500", "z50", "psl", "t2m"},
         "input5_noSIC": {"icethick", "sst", "ohc200", "z500", "z50", "psl", "t2m"},
     }
@@ -76,6 +78,7 @@ def test_input_variants_only_enable_their_named_predictors():
         ("input3e", "z50"),
         ("input3f", "ohc200"),
         ("input3g", "icethick"),
+        ("input3h_to500", "to500"),
     ],
 )
 def test_new_input_ablations_use_six_month_lags(variant, variable):
@@ -171,3 +174,79 @@ def test_validation_rejects_overlapping_partitions():
 def test_invalid_selectors_have_clear_errors(selector):
     with pytest.raises(ValueError):
         load_config(selector)
+
+
+_REANALYSIS_VOLUME_MEMBERS = (
+    "r2i1251p1f1",
+    "r2i1281p1f1",
+    "r2i1301p1f1",
+    "r3i1041p1f1",
+)
+
+
+@pytest.mark.parametrize("member_id", _REANALYSIS_VOLUME_MEMBERS)
+def test_reanalysis_volume_configs_are_isolated_time_splits(member_id):
+    variant = f"reanalysis_volume_{member_id}"
+    config = load_config(f"exp2_data_volume:{variant}")
+
+    assert config.experiment_name == f"exp2_{variant}"
+    assert config.data_name == f"seaice_plus_auxiliary_{variant}"
+    assert config.data_split["name"] == config.data_name
+    assert config.data_split["split_by"] == "time"
+    assert config.data_split["member_ids"] == [member_id]
+    assert config.data_split["time_range"] is None
+
+
+def test_reanalysis_volume_configs_have_contiguous_33_6_7_year_split():
+    config = load_config(
+        "exp2_data_volume:reanalysis_volume_r2i1251p1f1"
+    )
+    split = config.data_split
+
+    expected = {
+        "train": ("1968-01-01", "2000-12-01", 33 * 12),
+        "val": ("2001-01-01", "2006-12-01", 6 * 12),
+        "test": ("2007-01-01", "2013-12-01", 7 * 12),
+    }
+    for partition, (start, end, count) in expected.items():
+        dates = split[partition]
+        assert dates[0] == pd.Timestamp(start)
+        assert dates[-1] == pd.Timestamp(end)
+        assert len(dates) == count
+        assert dates.equals(pd.date_range(start, end, freq="MS"))
+
+    assert split["train"][-1] + pd.DateOffset(months=1) == split["val"][0]
+    assert split["val"][-1] + pd.DateOffset(months=1) == split["test"][0]
+    assert not set(split["train"]) & set(split["val"])
+    assert not set(split["train"]) & set(split["test"])
+    assert not set(split["val"]) & set(split["test"])
+
+
+def test_reanalysis_volume_configs_match_input2_and_obs_training_settings():
+    input2 = load_config("exp1_inputs:input2")
+    obs = load_config("exp3_obs:obs_input2")
+    configs = [
+        load_config(f"exp2_data_volume:reanalysis_volume_{member_id}")
+        for member_id in _REANALYSIS_VOLUME_MEMBERS
+    ]
+
+    for config in configs:
+        assert config.input_config == input2.input_config
+        assert config.target_config == input2.target_config
+        assert config.learning_rate == obs.learning_rate == 1e-3
+        assert config.weight_decay == obs.weight_decay == 5e-2
+        assert config.batch_size == obs.batch_size == 32
+        assert config.num_epochs == obs.num_epochs == 50
+        assert config.checkpoint_interval == obs.checkpoint_interval == 10
+        assert config.patience == obs.patience == 10
+        assert config.lr_scheduler == obs.lr_scheduler == "cosine"
+        assert config.lr_scheduler_args == obs.lr_scheduler_args == {
+            "t_max": 50,
+            "eta_min": 5e-5,
+        }
+
+    assert len({config.data_name for config in configs}) == 4
+    assert len({config.experiment_name for config in configs}) == 4
+    assert {config.data_name for config in configs}.isdisjoint(
+        {load_config(f"exp2_data_volume:vol{i}").data_name for i in range(1, 5)}
+    )

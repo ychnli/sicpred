@@ -1,4 +1,4 @@
-"""Train configured CESM models from precomputed input-target pairs.
+"""Train configured CESM models from eagerly loaded normalized fields.
 
 Command-line usage:
     --config SELECTOR          Required experiment configuration selector.
@@ -6,6 +6,9 @@ Command-line usage:
     --members INTEGER           Number of independently initialized models to train (default: 1).
     --start_ens_id INTEGER      Starting ensemble/checkpoint ID and seed offset (default: 0).
     --resume INTEGER             Resume for this many additional epochs from the latest checkpoint (default: 0).
+    --overwrite                 Remove existing checkpoints for the selected members before training.
+    --data-source SOURCE       Use dynamic normalized fields (default) or precomputed pairs.
+    --num-workers INTEGER      CPU prefetch worker count (default: 2).
 
 Examples:
     python -m src.models.train --config exp1_inputs:input3e
@@ -18,14 +21,18 @@ import pickle
 import wandb
 import numpy as np
 import pandas as pd
-from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from tqdm import tqdm
 import argparse 
 import inspect
 import random
 
-from src.models.models_util import CESM_Dataset
+from src.models.models_util import (
+    EagerCESMDataStore,
+    build_cesm_dataloader,
+    build_cesm_dataset,
+    prime_cesm_dataloader,
+)
 from src.models.models import UNetRes3
 from src.models.optim import build_lr_scheduler, build_optimizer
 from src.utils import util_cesm
@@ -54,7 +61,8 @@ def train_epoch(
     loss_fn_params = inspect.signature(loss_fn.forward).parameters
 
     for _, batch in progress_bar:
-        inputs, targets = batch["input"].to(device), batch["target"].to(device)
+        inputs = batch["input"].to(device, non_blocking=True)
+        targets = batch["target"].to(device, non_blocking=True)
         
         optimizer.zero_grad()
         predictions = model(inputs)
@@ -110,7 +118,8 @@ def validate_epoch(model, dataloader, loss_fn, device, epoch, total_epochs):
 
     with torch.no_grad():
         for batch_idx, batch in progress_bar:
-            inputs, targets = batch["input"].to(device), batch["target"].to(device)
+            inputs = batch["input"].to(device, non_blocking=True)
+            targets = batch["target"].to(device, non_blocking=True)
             predictions = model(inputs)
 
             loss_kwargs = {"prediction": predictions, "target": targets}
@@ -157,13 +166,65 @@ def main():
     parser.add_argument("--members", type=int, default=1, help="Number of ensemble members to train (default = 1)")
     parser.add_argument("--start_ens_id", type=int, default=0, help="Base seed (default = 0)")
     parser.add_argument("--resume", type=int, default=0, help="Number of additional epochs to resume training from latest checkpoint.")
+    parser.add_argument("--overwrite", action="store_true", help="Remove existing checkpoints for the selected members before training.")
+    parser.add_argument(
+        "--data-source",
+        choices=("dynamic", "precomputed"),
+        default="dynamic",
+        help="Construct samples from eager normalized fields (default) or legacy pair files.",
+    )
+    parser.add_argument(
+        "--num-workers", type=int, default=2,
+        help="Number of persistent CPU workers used to prefetch batches.",
+    )
+    parser.add_argument(
+        "--prefetch-factor", type=int, default=2,
+        help="Batches prefetched by each worker (only used when num-workers > 0).",
+    )
     args = parser.parse_args()
 
     if args.pretrained is not None and args.resume > 0:
         raise ValueError("Use either --pretrained (finetune) or --resume (resume), not both.")
+    if args.overwrite and args.resume > 0:
+        raise ValueError("Use either --overwrite or --resume, not both.")
     
     # Load configurations
     config = load_config(args.config)
+
+    if args.data_source == "dynamic":
+        data_store = EagerCESMDataStore(config, splits=("train", "val"))
+        print(
+            f"Loaded normalized train/validation data into "
+            f"{data_store.resident_data_gib:.2f} GiB of resident memory"
+        )
+    else:
+        data_store = None
+
+    train_dataset = build_cesm_dataset(
+        "train", config, data_source=args.data_source, store=data_store
+    )
+    val_dataset = build_cesm_dataset(
+        "val", config, data_source=args.data_source, store=data_store
+    )
+    train_dataloader = build_cesm_dataloader(
+        train_dataset,
+        batch_size=config.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+        pin_memory=True,
+        prefetch_factor=args.prefetch_factor,
+    )
+    val_dataloader = build_cesm_dataloader(
+        val_dataset,
+        batch_size=config.batch_size,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=False,
+        prefetch_factor=args.prefetch_factor,
+    )
+    # Fork the training workers before CUDA or multiprocessing helper threads
+    # start. Validation is inexpensive from RAM and stays in this process.
+    prime_cesm_dataloader(train_dataloader)
 
     # Early stopping
     patience = config.patience
@@ -179,10 +240,6 @@ def main():
                    mode="online", 
                    config={"lr": config.learning_rate, "batch_size": config.batch_size})
 
-        train_dataset = CESM_Dataset("train", config)
-        val_dataset = CESM_Dataset("val", config)
-        train_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
-        val_dataloader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False)
 
         # initialize model
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -238,6 +295,12 @@ def main():
         
         # Load a checkpoint if it exists
         save_dir = os.path.join(config_cesm.MODEL_DIRECTORY, config.experiment_name)
+        if args.overwrite and os.path.isdir(save_dir):
+            checkpoint_prefix = f"{config.model}_{config.experiment_name}_member_{ensemble_id}_"
+            for checkpoint_name in os.listdir(save_dir):
+                if checkpoint_name.startswith(checkpoint_prefix) and checkpoint_name.endswith(".pth"):
+                    os.remove(os.path.join(save_dir, checkpoint_name))
+
         start_epoch = 1
         total_epochs = config.num_epochs
         global_step = 0

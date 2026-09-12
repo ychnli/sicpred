@@ -29,6 +29,9 @@ def _inputs(*additional_inputs: str, include_icefrac: bool = True) -> dict[str, 
         "ohc200": {"include": "ohc200" in enabled, "norm": True,
                    "land_mask": True, "lag": 6, "divide_by_stdev": False,
                    "auxiliary": False, "use_min_max": True},
+        "to500": {"include": "to500" in enabled, "norm": True,
+                  "land_mask": True, "lag": 6, "divide_by_stdev": False,
+                  "auxiliary": False, "use_min_max": True},
         "z500": {"include": "z500" in enabled, "norm": True,
                  "land_mask": False, "lag": 6, "divide_by_stdev": False,
                  "auxiliary": False, "use_min_max": True},
@@ -155,6 +158,10 @@ CONFIGS = {
         "input3g", "seaice_plus_icethick",
         "Previous 12 months of sea ice + land mask and sin() and cos() of month + 6 months of sea ice thickness",
         "icethick"),
+    "input3h_to500": _active_config(
+        "input3h_to500", "seaice_plus_to500",
+        "Previous 12 months of sea ice + land mask and sin() and cos() of month + 6 months of ocean potential temperature at native 482.737 m depth",
+        "to500"),
     "input4": _active_config(
         "input4", "seaice_plus_all",
         "Previous 12 months of sea ice + auxiliary inputs + 6 months of SST, z500, psl, and t2m",
@@ -165,16 +172,16 @@ CONFIGS = {
         "z500", "z50", "psl", "t2m"),
     "input4b": _active_config(
         "input4b", "seaice_plus_ocean",
-        "Previous 12 months of sea ice + auxiliary inputs + 6 months of SST and top-200-m ocean heat content",
-        "sst", "ohc200"),
+        "Previous 12 months of sea ice + auxiliary inputs + 6 months of SST, top-200-m ocean heat content, and ocean potential temperature at native 482.737 m depth",
+        "sst", "ohc200", "to500"),
     "input5": _active_config(
         "input5", "seaice_plus_all_variables",
         "Previous 12 months of sea ice + auxiliary inputs + 6 months of every other physical variable",
-        "icethick", "sst", "ohc200", "z500", "z50", "psl", "t2m"),
+        "icethick", "sst", "ohc200", "to500", "z500", "z50", "psl", "t2m"),
     "input5_noSIC": _active_config(
         "input5_noSIC", "all_inputs_no_sic",
         "Auxiliary inputs + 6 months of every physical variable except sea ice concentration",
-        "icethick", "sst", "ohc200", "z500", "z50", "psl", "t2m",
+        "icethick", "sst", "ohc200", "to500", "z500", "z50", "psl", "t2m",
         include_icefrac=False),
     "input3a_dev": _legacy_config(
         "input3a_dev", "seaice_plus_temp_dev",

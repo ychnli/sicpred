@@ -18,13 +18,17 @@ import os
 import torch
 import numpy as np
 import pandas as pd
-from torch.utils.data import DataLoader
 import argparse
 import xarray as xr
 import re
 from tqdm import tqdm  
 
-from src.models.models_util import CESM_Dataset
+from src.models.models_util import (
+    EagerCESMDataStore,
+    build_cesm_dataloader,
+    build_cesm_dataset,
+    prime_cesm_dataloader,
+)
 from src.models.models import UNetRes3
 from src.utils import util_cesm
 from src.utils import util_shared
@@ -48,7 +52,6 @@ import numpy as np
 import pandas as pd
 import torch
 import xarray as xr
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 
@@ -66,6 +69,16 @@ def main():
                              "to zero-shot predict obs)")
     parser.add_argument("--batch-size", type=int, default=12)
     parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument(
+        "--prefetch-factor", type=int, default=2,
+        help="Batches prefetched by each worker (only used when num-workers > 0).",
+    )
+    parser.add_argument(
+        "--data-source",
+        choices=("dynamic", "precomputed"),
+        default="dynamic",
+        help="Construct samples from eager normalized fields (default) or legacy pair files.",
+    )
     args = parser.parse_args()
 
     # Load configurations
@@ -98,22 +111,39 @@ def main():
         print(f"Info: found existing path {output_path}. Model evaluation skipped because overwrite was off")
         return
 
-    # Dataset / dataloader
-    test_dataset = CESM_Dataset(args.split, dataset_config)
-    use_cuda = (args.device == "cuda") or (args.device is None and torch.cuda.is_available())
-    if args.device in ["cuda", "cpu"]:
-        device = torch.device(args.device)
+    # Prime workers before the model initializes CUDA so eager arrays are
+    # inherited copy-on-write and future batches are prefetched.
+    if args.data_source == "dynamic":
+        data_store = EagerCESMDataStore(
+            dataset_config, splits=(args.split,), include_targets=False
+        )
+        print(
+            f"Loaded normalized {args.split} data into "
+            f"{data_store.resident_data_gib:.2f} GiB of resident memory"
+        )
     else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    test_dataloader = DataLoader(
+        data_store = None
+    test_dataset = build_cesm_dataset(
+        args.split,
+        dataset_config,
+        data_source=args.data_source,
+        store=data_store,
+        include_targets=False,
+    )
+    test_dataloader = build_cesm_dataloader(
         test_dataset,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.num_workers,
-        pin_memory=use_cuda,
-        persistent_workers=(args.num_workers > 0),
+        pin_memory=(args.device != "cpu"),
+        prefetch_factor=args.prefetch_factor,
     )
+    prime_cesm_dataloader(test_dataloader)
+
+    if args.device in ["cuda", "cpu"]:
+        device = torch.device(args.device)
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     in_channels = util_cesm.get_num_input_channels(config.input_config)
     out_channels = util_cesm.get_num_output_channels(config.max_lead_months, config.target_config)
@@ -138,7 +168,7 @@ def main():
                 *data_split_settings["test"],
             ]
         else:
-            ensemble_members = data_split_settings["test"]
+            ensemble_members = data_split_settings[args.split]
         time_coords = data_split_settings["time_range"]
 
     elif data_split_settings["split_by"] == "time":
@@ -150,7 +180,7 @@ def main():
                 .union(data_split_settings["test"])
             )
         else:
-            time_coords = data_split_settings["test"]
+            time_coords = data_split_settings[args.split]
     else:
         raise ValueError(f"Unsupported split_by = {data_split_settings['split_by']}")
 

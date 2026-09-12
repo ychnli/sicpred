@@ -43,6 +43,8 @@ If that command succeeds and `apply_patch` is unavailable, use this minimal fall
 ### Job dispatching
 Sherlock uses the slurm scheduler. Queue CPU jobs for data downloading and preprocessing, and GPU jobs for model training and inference (calculating model diagnostics and bootstrap confidence intervals is also fine to include in these jobs, as they do not take much time). When running a batch of experiments in parallel, use array jobs to dispatch compute for each experiment. 
 
+In sbatch scripts, do `set -u` only after activating the conda environment.
+
 ### GPU usage
 The serc partition has 3 GPU types (V100, A100, and H100); prefer A100 and H100 if available for model training and inference. The gpu partition has more available, including consumer-grade GPUs, but is exposed to more users; use the gpu partition only if serc GPUs are unavailable. Unless you are given explicit permission, do not launch GPU jobs.
 

@@ -38,3 +38,57 @@ Other notes (for future reference, do not queue new agents to work on this right
 - input2 unintentionally used a different regularization setting than the other input configurations. We should repair this in our resubmission 
 - eventually need to repair all runs which have data leakage (which includes exp2 and exp3)
 - if we are re-running exp2, it would be good to use the same held out testing members as exp1 -- this way we can do a apples-to-apples comparison between data scaling results and variable importance results
+
+## 2026-09-09 22:42 PDT
+
+### Task 1: training-only detrending patch
+
+- **Status:** Complete. `src/utils/util_cesm.py` now fits monthly quadratic detrending coefficients strictly on the training partition and applies them unchanged to validation/test data: training members for ensemble-member splits (`exp1`/`exp2`) and training dates for time splits (`exp3`). Focused regression coverage was added in `tests/test_util_cesm.py`.
+- **Validation:** The full test suite passed (43 tests), `python -m compileall src` passed, and production output matched `experiments/exp1_inputs/detrending_triage/generate_and_compare.py` on a representative CESM subset.
+- **Artifacts:** No preprocessing or model artifacts were regenerated, and no Slurm/GPU jobs were launched. Existing normalized data, data pairs, checkpoints, predictions, and diagnostics remain unchanged.
+
+## 2026-09-09 23:51 PDT
+
+### Task 2: Experiment 2 reanalysis-volume CESM analogue
+
+- **Status:** Submitted. Four isolated, contiguous time-split CESM configurations use members `r2i1251p1f1`, `r2i1281p1f1`, `r2i1301p1f1`, and `r3i1041p1f1` with train/validation/test periods 1968-2000, 2001-2006, and 2007-2013. They use the non-finetune exp3 optimization settings and five neural seeds per member (20 models).
+- **Jobs:** CPU preprocessing array `42700825` (4 tasks) is pending; GPU A100/H100 training array `42700827` (20 tasks) will run after it succeeds; GPU evaluation/diagnostics array `42700828` (4 tasks) will run after all training tasks succeed. Existing `vol1`-`vol4` runs were not touched.
+- **Validation:** 52 tests passed; `python -m compileall src`, `bash -n`, `sbatch --test-only`, and `git diff --check` passed before submission.
+
+## 2026-09-09 23:55 PDT
+
+### Experiment 1: surface winds
+
+- **Status:** Postponed by decision. No surface-wind data, preprocessing, model training, or figure update was submitted.
+
+### Experiment 1: `to500` and revised `input4b`
+
+- **Status:** Submitted. Added `to500` from CESM ocean `TEMP` (`degC`) at native `z_t` index 32: 48,273.671875 cm = 482.737 m, the nearest level to 500 m. `input3h_to500` uses SIC + `to500`; existing `input4b` now uses SIC + SST + `ohc200` + `to500` while retaining its established artifact and experiment names.
+- **Safety:** Backed up 41 existing `exp1_input4b` checkpoint files to `/oak/stanford/groups/earlew/yuchen/sicpred/sicpred_models/exp1_input4b_pre_to500_20260909_235411_PDT` before retraining.
+- **Jobs:** Download array `42701210` (14 members) → preprocessing array `42701215` (revised `input4b` overwrites its prior processed artifact) → GPU training array `42701253` (five seeds each) → postprocess array `42701254` (evaluation, diagnostics, ACC/RMSE bootstrap vs `input2`), all connected by `afterok` dependencies. Jobs are queued; no results are available yet.
+
+
+## 2026-09-10 00:01 PDT
+
+### Task 2: `icethick` min--max range triage
+
+- **Status:** Complete as a read-only analysis in `experiments/exp1_inputs/detrending_triage/input3g_icethick_triage.ipynb`. New cells separately recompute pre-detrending min--max extrapolation from raw thickness and training-member min/max statistics, so this diagnosis is distinct from the historical detrending-leakage artifact.
+- **Evidence:** 61,068 finite grid-cell/month ranges include 27,867 exact-zero ranges; the smallest positive range is `4.60e-18 m` (1st percentile `1.50e-7 m`, median `0.731 m`). Of held-out pre-detrending values, 240/10,884,840 validation values and 645/21,769,680 test values exceed `|z|=10`; the corresponding maxima are `2.69e11` and `4.84e13`. The smallest-range cells have zero training thickness-present fraction (>1 cm), consistent with marginal/ice-free contexts.
+- **Candidate policies documented, not selected:** symmetric `|z|<=10` clipping and positive denominator floors of `1e-6`, `1e-4`, `1e-3`, or `1e-2 m`; the notebook reports their affected fractions and resulting maxima. Exact-zero ranges and any physical mask/floor/cap remain decisions requiring user approval.
+- **Artifacts:** No production preprocessing, normalized data, model-ready pairs, models, predictions, diagnostics, figures, or Slurm jobs were changed. The new cells were executed successfully against existing artifacts.
+
+## 2026-09-10 10:49 PDT
+
+### Experiment 2 historical job audit
+
+- **Status:** Preprocessing array `42700825` failed in all four tasks during Conda activation because nounset was enabled before activation (`MKL_INTERFACE_LAYER: unbound variable`). Dependent training array `42700827` and postprocessing array `42700828` were cancelled without running.
+- **Artifacts:** No normalized inputs, data pairs, checkpoints, or predictions for the four reanalysis-volume configurations were created.
+
+
+## 2026-09-10 11:04 PDT
+
+### Experiment 1: `to500` prior-job audit
+
+- **Verified outcome:** Download array `42701210` failed for all 14 tasks with exit code 1 after 10--22 seconds; each task stopped during Conda activation because `MKL_INTERFACE_LAYER` was unbound. Dependent preprocessing `42701215`, GPU training `42701253`, and postprocessing `42701254` were cancelled without starting.
+- **Artifacts:** The failed chain produced no new `to500` model or prediction artifacts. The prior `input4b` checkpoints remain preserved in two timestamped archive directories; the canonical `exp1_input4b` model directory is currently absent.
+- **Current status:** No replacement jobs have been submitted. Resubmission remains on hold pending explicit approval of the revised resource and dependency layout.

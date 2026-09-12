@@ -144,6 +144,18 @@ CESM_VAR_ARGS = {
         "long_name": "Top 200 m depth-averaged ocean potential temperature",
         "grid": "ocn",
     },
+    "to500": {
+        "raw_variables": ("TEMP",),
+        "processor": process_direct,
+        "vertical_selection": {
+            "coordinate": "z_t",
+            "value": 48_273.671875,
+            "units": "centimeters",
+        },
+        "latitude_bounds": (-90.0, -35.0),
+        "long_name": "Ocean potential temperature at native 482.737 m depth",
+        "grid": "ocn",
+    },
 
     # Atmospheric variables
     "psl": {
@@ -189,13 +201,14 @@ CESM_VAR_ARGS = {
 }
 
 DOWNLOAD_SETTINGS = {
-    "vars": ["icethick", "sst", "ohc200", "psl", "z500", "z50", "t2m"],
+    "vars": ["icethick", "sst", "ohc200", "to500", "psl", "z500", "z50", "t2m"],
     "chunk": "default",
     "member_id": {
         # "icefrac": "all",
         "icethick": INPUT_EXPERIMENTS_SUBSET,
         "sst": INPUT_EXPERIMENTS_SUBSET,
         "ohc200": INPUT_EXPERIMENTS_SUBSET,
+        "to500": INPUT_EXPERIMENTS_SUBSET,
         "psl": INPUT_EXPERIMENTS_SUBSET,
         "z500": INPUT_EXPERIMENTS_SUBSET,
         "z50": INPUT_EXPERIMENTS_SUBSET,
@@ -520,6 +533,10 @@ def main():
     parser.add_argument("--num-workers", type=int, default=1)
     parser.add_argument("--worker-id", type=int, default=0)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--variables", nargs="+", choices=sorted(CESM_VAR_ARGS),
+        help="Restrict processing to named derived output variables.",
+    )
     args = parser.parse_args()
     if args.num_workers < 1:
         raise ValueError("--num-workers must be >= 1")
@@ -530,6 +547,11 @@ def main():
     timing = {"processed": 0, "skipped_existing": 0, "errors": 0}
     variable_dirs = make_save_directories()
     settings = _expanded_download_settings(DOWNLOAD_SETTINGS)
+    if args.variables is not None:
+        settings["vars"] = args.variables
+        settings["member_id"] = {
+            name: settings["member_id"][name] for name in args.variables
+        }
     settings = check_if_downloaded(
         download_settings=settings,
         parent_dir=DOWNLOAD_SETTINGS["save_directory"],

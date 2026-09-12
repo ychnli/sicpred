@@ -41,6 +41,18 @@ def test_direct_processor_selects_nearest_physical_pressure():
     assert result["lev"].item() == pytest.approx(524.6871747)
 
 
+def test_to500_registry_uses_verified_native_ocean_depth():
+    settings = download.CESM_VAR_ARGS["to500"]
+
+    assert settings["raw_variables"] == ("TEMP",)
+    assert settings["vertical_selection"] == {
+        "coordinate": "z_t",
+        "value": 48_273.671875,
+        "units": "centimeters",
+    }
+    assert "482.737 m" in settings["long_name"]
+
+
 def test_depth_weighted_mean_uses_partial_boundary_layer():
     raw = xr.Dataset(
         {"TEMP": ("z_t", [1.0, 3.0, 5.0])},

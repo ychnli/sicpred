@@ -246,7 +246,15 @@ def normalize_data(var_name, data_split_settings, max_lag_months, max_lead_month
             print("done!")
 
             months = da['time'].dt.month
-            normalized_da = (da - monthly_mins.sel(month=months)) / (monthly_maxs.sel(month=months) - monthly_mins.sel(month=months))
+            monthly_mins_for_data = monthly_mins.sel(month=months)
+            data_range = monthly_maxs.sel(month=months) - monthly_mins_for_data
+            numerator = da - monthly_mins_for_data
+            safe_range = data_range.where(data_range != 0, 1)
+            normalized_da = xr.where(
+                data_range != 0,
+                numerator / safe_range,
+                xr.where(numerator > 0, 10, xr.where(numerator < 0, -10, np.nan)),
+            ).clip(min=-10, max=10)
 
             monthly_mins_ds = monthly_mins.to_dataset(name=var_name)
             monthly_maxs_ds = monthly_maxs.to_dataset(name=var_name)
