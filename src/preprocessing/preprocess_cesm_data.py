@@ -75,7 +75,10 @@ def main():
     print("Calculating and saving month weights... \n")
     month_weights_fp = os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", config.data_name, "month_weights.pkl")
     if not os.path.exists(month_weights_fp) or args.overwrite:
-        month_weights = util_cesm.calculate_monthly_weights(data_split_settings=config.data_split)
+        month_weights = util_cesm.calculate_monthly_weights(
+            data_split_settings=config.data_split,
+            partition="train",
+        )
         with open(month_weights_fp, "wb") as f:
             pickle.dump(month_weights, f)
         print("done! \n\n")

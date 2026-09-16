@@ -58,8 +58,8 @@ def test_input_variants_only_enable_their_named_predictors():
         "input4": {"icefrac", "sst", "z500", "psl", "t2m"},
         "input4a": {"icefrac", "z500", "z50", "psl", "t2m"},
         "input4b": {"icefrac", "sst", "ohc200", "to500"},
-        "input5": {"icefrac", "icethick", "sst", "ohc200", "z500", "z50", "psl", "t2m"},
-        "input5_noSIC": {"icethick", "sst", "ohc200", "z500", "z50", "psl", "t2m"},
+        "input5": {"icefrac", "icethick", "sst", "ohc200", "to500", "z500", "z50", "psl", "t2m"},
+        "input5_noSIC": {"icethick", "sst", "ohc200", "to500", "z500", "z50", "psl", "t2m"},
     }
 
     for variant, expected_inputs in expected.items():
@@ -70,6 +70,18 @@ def test_input_variants_only_enable_their_named_predictors():
             if settings["include"] and not settings["auxiliary"]
         }
         assert physical_inputs == expected_inputs
+
+
+def test_active_input_variants_disable_monthly_loss_weights():
+    variants = (
+        "input2", "input3a", "input3b", "input3c", "input3d", "input3e",
+        "input3f", "input3g", "input3h_to500", "input4", "input4a",
+        "input4b", "input5", "input5_noSIC",
+    )
+
+    for variant in variants:
+        config = load_config(f"exp1_inputs:{variant}")
+        assert config.loss_function_args == {"monthly_weights_source": "none"}
 
 
 @pytest.mark.parametrize(

@@ -94,7 +94,7 @@ python -m src.utils.bootstrap \
     --metric acc \
     --config_a exp1_input2 \
     --config_b "${experiment_name}" \
-    --transform fisher_z
+    --transform none
 python -m src.utils.bootstrap \
     --metric rmse \
     --config_a exp1_input2 \

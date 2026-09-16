@@ -154,6 +154,20 @@ def test_dynamic_dataset_matches_pairs_prefetches_and_is_faster(
         "train", config, data_source="precomputed"
     )
     xr.testing.assert_allclose(dynamic_targets, legacy_targets)
+    lazy_targets = load_cesm_targets_data_array(
+        "train",
+        config,
+        chunks={
+            "start_prediction_month": 2,
+            "member_id": 1,
+            "lead_time": -1,
+            "y": -1,
+            "x": -1,
+        },
+    )
+    assert lazy_targets.chunks is not None
+    xr.testing.assert_allclose(lazy_targets.compute(), legacy_targets)
+    lazy_targets.close()
 
     loader = build_cesm_dataloader(
         dynamic,

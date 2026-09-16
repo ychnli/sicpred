@@ -17,7 +17,7 @@ All active variants contain the following channels:
 
 Each optional physical predictor contributes the six complete months before forecast initialization. Its monthly, grid-cell-specific minimum and maximum are calculated from the training members, it is min-max scaled, and the result is then quadratically detrended. Missing values are filled with zero when model-ready inputs are assembled.
 
-This gives 15 channels for `input2`, 21 for each single-predictor variant, 39 for `input4a`, 33 for revised `input4b`, 57 for `input5`, and 45 for `input5_noSIC`. The no-SIC variant still preprocesses sea-ice concentration as its prediction target, but does not include it among the model inputs. `to500` is CESM ocean `TEMP` (`degC`) selected at native `z_t` index 32: 48,273.671875 cm = 482.737 m, the closest native level to 500 m.
+This gives 15 channels for `input2`, 21 for each single-predictor variant, 39 for `input4a`, 33 for revised `input4b`, 63 for `input5`, and 51 for `input5_noSIC`. The no-SIC variant still preprocesses sea-ice concentration as its prediction target, but does not include it among the model inputs. `to500` is CESM ocean `TEMP` (`degC`) selected at native `z_t` index 32: 48,273.671875 cm = 482.737 m, the closest native level to 500 m.
 
 All active variants otherwise share these experiment settings:
 
@@ -26,13 +26,13 @@ All active variants otherwise share these experiment settings:
 - Eight training, two validation, and four test ensemble members.
 - `UNetRes3` with `n_channels_factor=0.5`.
 - Batch size 64, at most 10 epochs, patience 3, and evaluation of the best checkpoint.
-- Area- and target-month-weighted MSE in the current training implementation.
+- Grid-cell-area-weighted MSE with no target-month weighting.
 
 ## Variant matrix
 
 | Selector | Extra physical predictors | Channels | Data artifact | Weight decay |
 |---|---|---:|---|---:|
-| `exp1_inputs:input2` | None | 15 | `seaice_plus_auxiliary` | `1e-3` |
+| `exp1_inputs:input2` | None | 15 | `seaice_plus_auxiliary` | `5e-3` |
 | `exp1_inputs:input3a` | SST | 21 | `seaice_plus_sst` | `5e-3` |
 | `exp1_inputs:input3b` | Sea-level pressure (`psl`) | 21 | `seaice_plus_psl` | `5e-3` |
 | `exp1_inputs:input3c` | 500 hPa geopotential height (`z500`) | 21 | `seaice_plus_z500` | `5e-3` |
@@ -44,37 +44,12 @@ All active variants otherwise share these experiment settings:
 | `exp1_inputs:input4` | SST, sea-level pressure, 500 hPa geopotential height, and 2 m air temperature | 39 | `seaice_plus_all` | `5e-3` |
 | `exp1_inputs:input4a` | z500, z50, psl, and t2m | 39 | `seaice_plus_atmosphere` | `5e-3` |
 | `exp1_inputs:input4b` | SST, top-200-m ocean heat content, and `to500` | 33 | `seaice_plus_ocean` | `5e-3` |
-| `exp1_inputs:input5` | Sea-ice thickness, SST, top-200-m ocean heat content, z500, z50, psl, and t2m | 57 | `seaice_plus_all_variables` | `5e-3` |
-| `exp1_inputs:input5_noSIC` | All `input5` predictors except sea-ice concentration | 45 | `all_inputs_no_sic` | `5e-3` |
+| `exp1_inputs:input5` | Sea-ice thickness, SST, top-200-m ocean heat content, `to500`, z500, z50, psl, and t2m | 63 | `seaice_plus_all_variables` | `5e-3` |
+| `exp1_inputs:input5_noSIC` | All `input5` predictors except sea-ice concentration | 51 | `all_inputs_no_sic` | `5e-3` |
 
 Experiment 2 copies the complete `input2` input recipe and varies only the number of CESM training members. The active observational and fine-tuning variants in experiment 3 also copy `input2`; they do not use SST or atmospheric predictors.
 
-## Design choices worth revisiting
-
-### High priority
-
+Bug fixes from previous versions:
 1. **Quadratic detrending now fits on the training partition.** The pipeline estimates monthly, grid-cell-specific quadratic coefficients only from training members for member splits or training dates for time splits, then applies them unchanged to held-out data. Existing preprocessed artifacts from before this patch remain contaminated and must not be treated as repaired.
 
-2. **Monthly loss weights use the full normalized dataset.** `calculate_monthly_weights()` averages `icefrac_norm.nc` over every available time and member instead of selecting the training partition. Validation/test information therefore influences the training objective.
-
-3. **The input ablation changes weight decay as well as inputs.** `input2` uses `1e-3`, whereas all variants with additional predictors use `5e-3`. Comparisons against `input2` therefore do not isolate the value of the added feature set.
-
-### Medium priority
-
-4. **The per-variable `land_mask` setting is currently inert.** Values such as `icefrac["land_mask"]` and `sst["land_mask"]` are defined but never read during normalization or input assembly. NaNs are always replaced by zero, and the only explicit land information comes from the separate auxiliary land-mask channel. The unused setting can mislead a reader into believing different masking behavior is being applied.
-
-5. **Quadratic detrending is an implicit global default.** Every normalized physical variable is detrended because `normalize_data(..., detrend=True)` is not overridden by the experiment config. That includes SST and all atmospheric inputs. After detrending, a variable described as min-max scaled is no longer necessarily bounded by `[0, 1]`. This choice should either be made explicit in the config or justified as a fixed preprocessing invariant.
-
-6. **Min-max scaling has no zero-range guard.** At grid cells/months where the training minimum equals the maximum, normalization divides by zero. Later `fillna(0)` handles NaNs during assembly, but it does not explicitly handle positive or negative infinity.
-
-7. **The land-mask orientation relies on an unexplained transpose.** Input construction reshapes and transposes the mask with the comment “for some reason, x and y get switched.” This deserves a coordinate-based assertion or visual test, especially because the same mask recipe is inherited by observational experiments.
-
-### Lower priority / intentional but worth remembering
-
-8. **Seasonal inputs are constant images.** Sine and cosine values are repeated over the entire spatial grid. This is a reasonable way to supply seasonality to a convolutional model, though it uses two full image channels for two scalars.
-
-9. **All physical inputs stop one month before initialization.** For a forecast initialized in month `t`, inputs end at `t-1` and targets begin at `t`. This avoids contemporaneous target information, but the convention should remain explicit when comparing with systems whose initialization data include month `t`.
-
-10. **The target lead coordinate is hard-coded to six values during preprocessing.** Although `max_lead_months` is configurable, target construction assigns `np.arange(1, 7)`. Any future experiment using a different forecast horizon would produce inconsistent coordinates.
-
-11. **Anomaly outputs are constrained by `tanh`.** `UNetRes3` maps anomaly predictions to `[-1, 1]`. Sea-ice concentration anomalies are naturally limited to roughly this range before detrending, but the quadratic transformation can move values outside it. It is worth checking the processed target distribution for clipping pressure.
+2. **Monthly loss weighting is disabled.** Active exp1 configurations use unit target-month weights, leaving only grid-cell area weighting. Preprocessing retains a training-partition-only monthly-weight artifact for backward compatibility, but these runs do not load it.

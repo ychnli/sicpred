@@ -29,5 +29,5 @@ for seed in 0 1 2 3 4; do
 done
 
 python -m src.models.diagnostics --config "${selector}"
-python -m src.utils.bootstrap --metric acc --config_a exp1_input2 --config_b "${experiment_name}" --transform fisher_z
+python -m src.utils.bootstrap --metric acc --config_a exp1_input2 --config_b "${experiment_name}" --transform none
 python -m src.utils.bootstrap --metric rmse --config_a exp1_input2 --config_b "${experiment_name}"

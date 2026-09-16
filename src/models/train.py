@@ -287,8 +287,29 @@ def main():
         # initialize loss function
         if config.loss_function == "MSE":
             area_weights = util_cesm.calculate_area_weights()
-            with open(os.path.join(config_cesm.PROCESSED_DATA_DIRECTORY, "normalized_inputs", config.data_name, "month_weights.pkl"), "rb") as f:
-                month_weights = pickle.load(f)
+            monthly_weights_source = config.loss_function_args.get(
+                "monthly_weights_source", "saved"
+            )
+            if monthly_weights_source == "saved":
+                weights_path = os.path.join(
+                    config_cesm.PROCESSED_DATA_DIRECTORY,
+                    "normalized_inputs",
+                    config.data_name,
+                    "month_weights.pkl",
+                )
+                with open(weights_path, "rb") as file:
+                    month_weights = pickle.load(file)
+            elif monthly_weights_source == "train":
+                month_weights = util_cesm.calculate_monthly_weights(
+                    config.data_split, partition="train"
+                )
+            elif monthly_weights_source == "none":
+                month_weights = np.ones(12, dtype=np.float32)
+            else:
+                raise ValueError(
+                    "monthly_weights_source must be saved, train, or none, "
+                    f"not {monthly_weights_source!r}"
+                )
             loss_fn = WeightedMSELoss(device, area_weights, month_weights)
         else:
             raise NotImplementedError(f"Loss {config.loss_function} not implemented.")

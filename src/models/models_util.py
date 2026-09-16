@@ -544,9 +544,14 @@ def build_cesm_dataset(
 
 
 def load_cesm_targets_data_array(
-    split, experiment_config, *, data_source="dynamic"
+    split, experiment_config, *, data_source="dynamic", chunks=None
 ):
-    """Load all targets for diagnostics without per-sample file access."""
+    """Load all targets for diagnostics without per-sample file access.
+
+    When chunks are provided, the dynamic-data path remains lazy so callers can
+    reduce diagnostics a block at a time instead of materializing the full
+    overlapping lead-time tensor in memory.
+    """
     member_ids, start_months = _split_members_and_months(
         experiment_config.data_split, split
     )
@@ -563,11 +568,16 @@ def load_cesm_targets_data_array(
                     dim="start_prediction_month",
                 )
             )
-        return xr.concat(member_arrays, dim="member_id").assign_coords(
+        result = xr.concat(member_arrays, dim="member_id").assign_coords(
             member_id=member_ids
         ).transpose(
             "start_prediction_month", "member_id", "lead_time", "y", "x"
         ).load()
+        if chunks is not None:
+            result = result.chunk(
+                {dim: size for dim, size in chunks.items() if dim in result.dims}
+            )
+        return result
     if data_source != "dynamic":
         raise ValueError("data_source must be 'dynamic' or 'precomputed'")
 
@@ -590,60 +600,85 @@ def load_cesm_targets_data_array(
             "icefrac_combined.nc",
         )
 
-    with xr.open_dataset(target_path, chunks={"member_id": 1}) as target_ds:
-        target = target_ds["icefrac"]
-        if "month" in target.coords:
-            target = target.drop_vars("month")
-        target = target.sel(member_id=member_ids).transpose(
-            "member_id", "time", "y", "x"
-        )
+    source_chunks = {"member_id": 1} if chunks is None else {
+        "member_id": 1,
+        "time": chunks.get("start_prediction_month", 12),
+        "y": -1,
+        "x": -1,
+    }
+    target_ds = xr.open_dataset(target_path, chunks=source_chunks)
+    target = target_ds["icefrac"]
+    if "month" in target.coords:
+        target = target.drop_vars("month")
+    target = target.sel(member_id=member_ids).transpose(
+        "member_id", "time", "y", "x"
+    )
+    time_positions = {
+        pd.Timestamp(value): index
+        for index, value in enumerate(target.time.values)
+    }
+    target_indices = np.asarray(
+        [
+            [
+                time_positions[month]
+                for month in pd.date_range(
+                    start_month,
+                    start_month
+                    + pd.DateOffset(
+                        months=experiment_config.max_lead_months - 1
+                    ),
+                    freq="MS",
+                )
+            ]
+            for start_month in start_months
+        ]
+    )
+
+    if chunks is None:
         with dask.config.set(scheduler="synchronous"):
             target.load()
-        time_positions = {
-            pd.Timestamp(value): index
-            for index, value in enumerate(target.time.values)
-        }
-        target_indices = np.asarray(
-            [
-                [
-                    time_positions[month]
-                    for month in pd.date_range(
-                        start_month,
-                        start_month
-                        + pd.DateOffset(
-                            months=experiment_config.max_lead_months - 1
-                        ),
-                        freq="MS",
-                    )
-                ]
-                for start_month in start_months
-            ]
-        )
         values = np.asarray(target.values)[:, target_indices].transpose(
             1, 0, 2, 3, 4
         )
         values = values.copy()
         values[np.isnan(values)] = 0
-        return xr.DataArray(
-            values,
-            dims=(
-                "start_prediction_month",
-                "member_id",
-                "lead_time",
-                "y",
-                "x",
-            ),
-            coords={
-                "start_prediction_month": start_months,
-                "member_id": member_ids,
-                "lead_time": np.arange(
-                    1, experiment_config.max_lead_months + 1
-                ),
-                "y": target.y.values,
-                "x": target.x.values,
-            },
-            name="data",
+    else:
+        indexer = xr.DataArray(
+            target_indices,
+            dims=("start_prediction_month", "lead_time"),
         )
+        values = target.isel(time=indexer).transpose(
+            "start_prediction_month", "member_id", "lead_time", "y", "x"
+        ).data
+
+    result = xr.DataArray(
+        values,
+        dims=(
+            "start_prediction_month",
+            "member_id",
+            "lead_time",
+            "y",
+            "x",
+        ),
+        coords={
+            "start_prediction_month": start_months,
+            "member_id": member_ids,
+            "lead_time": np.arange(
+                1, experiment_config.max_lead_months + 1
+            ),
+            "y": target.y.values,
+            "x": target.x.values,
+        },
+        name="data",
+    ).fillna(0)
+    if chunks is None:
+        target_ds.close()
+    else:
+        result = result.chunk(
+            {dim: size for dim, size in chunks.items() if dim in result.dims}
+        )
+        result.set_close(target_ds.close)
+    return result
 
 
 def build_cesm_dataloader(

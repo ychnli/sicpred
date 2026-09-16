@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 
 import pandas as pd
 
@@ -69,7 +70,8 @@ def _active_config(variant: str, data_name: str, notes: str,
             *additional_inputs, include_icefrac=include_icefrac
         ),
         target_config=deepcopy(_TARGET),
-        weight_decay=1e-3 if variant == "input2" else 5e-3,
+        loss_function_args={"monthly_weights_source": "none"},
+        weight_decay=5e-3,
     )
 
 
@@ -116,12 +118,7 @@ def _legacy_config(variant: str, data_name: str, notes: str,
         data_split=split,
         input_config=_legacy_inputs(divide_by_stdev=divide_by_stdev),
         target_config=deepcopy(_TARGET),
-        loss_function_args={
-            "apply_month_weights": True,
-            "monthly_weights": {"data_split_settings": split, "use_softmax": True, "T": 2},
-            "apply_area_weights": True,
-            "l2_lambda": 0,
-        },
+        loss_function_args={"monthly_weights_source": "none"},
         checkpoint_to_evaluate="epoch_10",
     )
 
@@ -196,5 +193,18 @@ CONFIGS = {
         "Previous 12 months of sea ice + land mask and sin() and cos() of month +     6 channels of unit gaussian noise",
         divide_by_stdev=True),
 }
+
+CONFIGS["input2_weights_train"] = replace(
+    CONFIGS["input2"],
+    experiment_name="exp1_input2_month_weights_train",
+    notes="Input2 treatment using monthly loss weights from training members",
+    loss_function_args={"monthly_weights_source": "train"},
+)
+CONFIGS["input2_no_month_weights"] = replace(
+    CONFIGS["input2"],
+    experiment_name="exp1_input2_no_month_weights",
+    notes="Input2 ablation using area weights without monthly loss weights",
+    loss_function_args={"monthly_weights_source": "none"},
+)
 
 __all__ = ["CONFIGS"]

@@ -92,3 +92,6 @@ Other notes (for future reference, do not queue new agents to work on this right
 - **Verified outcome:** Download array `42701210` failed for all 14 tasks with exit code 1 after 10--22 seconds; each task stopped during Conda activation because `MKL_INTERFACE_LAYER` was unbound. Dependent preprocessing `42701215`, GPU training `42701253`, and postprocessing `42701254` were cancelled without starting.
 - **Artifacts:** The failed chain produced no new `to500` model or prediction artifacts. The prior `input4b` checkpoints remain preserved in two timestamped archive directories; the canonical `exp1_input4b` model directory is currently absent.
 - **Current status:** No replacement jobs have been submitted. Resubmission remains on hold pending explicit approval of the revised resource and dependency layout.
+
+## 2026 09-12 16:47 PDT
+Experiment 1: dynamic data loading speeds up training dramatically. One epoch takes ~15 seconds to train and run inference on val. One input configuration is nominally 50 epochs (10 epochs per 5 nn member), so one configuration takes only around 13 minutes to run. 

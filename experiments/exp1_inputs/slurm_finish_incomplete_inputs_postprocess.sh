@@ -1,12 +1,13 @@
 #!/usr/bin/bash
-# Recompute diagnostics and input2-relative bootstrap intervals after exp1 finish.
+# Finish missing diagnostics and input2-relative bootstrap intervals for exp1.
 #SBATCH --job-name=sicexp1post
-#SBATCH --output=logs/exp1_finish_postprocess.%j.out
-#SBATCH --error=logs/exp1_finish_postprocess.%j.err
-#SBATCH --time=06:00:00
+#SBATCH --output=logs/exp1_finish_postprocess.%A_%a.out
+#SBATCH --error=logs/exp1_finish_postprocess.%A_%a.err
+#SBATCH --time=01:00:00
 #SBATCH --partition=serc
 #SBATCH --cpus-per-task=2
-#SBATCH --mem=48GB
+#SBATCH --mem=24GB
+#SBATCH --array=0-4
 
 set -eo pipefail
 
@@ -19,37 +20,32 @@ cd /home/users/yucli/sicpred
 model_root="/oak/stanford/groups/earlew/yuchen/sicpred/sicpred_models"
 prediction_root="/scratch/users/yucli/sicpred_model_predictions"
 configs=(input3g input4b input3h_to500 input5 input5_noSIC)
+config="${configs[$SLURM_ARRAY_TASK_ID]}"
+experiment_name="exp1_${config}"
+model_dir="${model_root}/${experiment_name}"
+prediction="${prediction_root}/${experiment_name}/UNetRes3_best_predictions.nc"
 
-for config in "${configs[@]}"; do
-    experiment_name="exp1_${config}"
-    model_dir="${model_root}/${experiment_name}"
-    prediction="${prediction_root}/${experiment_name}/UNetRes3_best_predictions.nc"
-
-    for seed in 0 1 2 3 4; do
-        checkpoint="${model_dir}/UNetRes3_${experiment_name}_member_${seed}_best.pth"
-        [[ -s "${checkpoint}" ]] || {
-            echo "Missing checkpoint: ${checkpoint}" >&2
-            exit 1
-        }
-    done
-    [[ -s "${prediction}" ]] || {
-        echo "Missing prediction artifact: ${prediction}" >&2
+for seed in 0 1 2 3 4; do
+    checkpoint="${model_dir}/UNetRes3_${experiment_name}_member_${seed}_best.pth"
+    [[ -s "${checkpoint}" ]] || {
+        echo "Missing checkpoint: ${checkpoint}" >&2
         exit 1
     }
-
-    python -m src.models.diagnostics \
-        --config "exp1_inputs:${config}" \
-        --data-source dynamic \
-        --overwrite
-    python -m src.utils.bootstrap \
-        --metric acc \
-        --config_a exp1_input2 \
-        --config_b "${experiment_name}" \
-        --transform fisher_z \
-        --overwrite
-    python -m src.utils.bootstrap \
-        --metric rmse \
-        --config_a exp1_input2 \
-        --config_b "${experiment_name}" \
-        --overwrite
 done
+[[ -s "${prediction}" ]] || {
+    echo "Missing prediction artifact: ${prediction}" >&2
+    exit 1
+}
+
+python -m src.models.diagnostics \
+    --config "exp1_inputs:${config}" \
+    --data-source dynamic
+python -m src.utils.bootstrap \
+    --metric acc \
+    --config_a exp1_input2 \
+    --config_b "${experiment_name}" \
+    --transform none
+python -m src.utils.bootstrap \
+    --metric rmse \
+    --config_a exp1_input2 \
+    --config_b "${experiment_name}"

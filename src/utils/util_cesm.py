@@ -720,20 +720,35 @@ def calculate_area_weights():
     return weights 
 
 
-def calculate_monthly_weights(data_split_settings):
+def calculate_monthly_weights(data_split_settings, partition=None):
     """
     Calculates the monthly weights based on the seasonal cycle of mean squared sea ice concentration anomaly
     
     Param:
         (dict)      data_split_settings
+        (str|None)  partition: optional train/val/test subset
     Returns:
         (np.array)  weights (12,)
     """
 
     fp = os.path.join(config.PROCESSED_DATA_DIRECTORY, "normalized_inputs", data_split_settings["name"], "icefrac_norm.nc")
     with xr.open_dataset(fp) as ds: 
+        data = ds["icefrac"]
+        if partition is not None:
+            if partition not in {"train", "val", "test"}:
+                raise ValueError(
+                    "partition must be one of train, val, test, or None"
+                )
+            if data_split_settings["split_by"] == "ensemble_member":
+                data = data.sel(member_id=data_split_settings[partition])
+            elif data_split_settings["split_by"] == "time":
+                data = data.sel(time=data_split_settings[partition])
+            else:
+                raise ValueError(
+                    f"Unsupported split_by={data_split_settings['split_by']!r}"
+                )
         dims_to_reduce = [d for d in ["time", "member_id", "x", "y"] if d in ds.dims]
-        weights = (ds["icefrac"] ** 2).groupby("time.month").mean(dims_to_reduce)
+        weights = (data ** 2).groupby("time.month").mean(dims_to_reduce)
         weights = (1/weights)
         weights = weights / weights.mean()
         weights = weights.values
